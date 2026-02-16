@@ -16,6 +16,7 @@ services:
       - ENV=${ENV:-development}
     volumes:
       - ./services/orchestrator/app:/app/app  # Hot reload
+      - ./services/orchestrator/tests:/app/tests  # Test files
       - ./data:/app/data  # Persistent data storage
     networks:
       - forgebaselines
@@ -35,6 +36,7 @@ services:
       - ENV=${ENV:-development}
     volumes:
       - ./services/classification/app:/app/app  # Hot reload
+      - ./services/classification/tests:/app/tests  # Test files
       - ./data:/app/data  # Shared data access
     networks:
       - forgebaselines
