@@ -1,5 +1,6 @@
 """Dataset schemas."""
 
+from typing import Dict, List, Any
 from pydantic import BaseModel
 
 
@@ -10,3 +11,10 @@ class DatasetUploadResponse(BaseModel):
     rows: int
     cols: int
     user_id: str
+
+
+class DatasetProfileResponse(BaseModel):
+    """Response for dataset profile."""
+    dataset_id: str
+    user_id: str
+    profile: Dict[str, Any]

@@ -4,8 +4,9 @@ import pandas as pd
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 
 from app.dependencies import get_user_id
-from app.schemas.dataset import DatasetUploadResponse
+from app.schemas.dataset import DatasetUploadResponse, DatasetProfileResponse
 from app.services.storage import storage
+from app.services.profiler import profile_dataset
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
@@ -48,24 +49,23 @@ async def upload_dataset(
     )
 
 
-@router.get("/{dataset_id}/profile")
+@router.get("/{dataset_id}/profile", response_model=DatasetProfileResponse)
 async def get_dataset_profile(dataset_id: str, user_id: str = Depends(get_user_id)):
-    """Get dataset profile. V1.0.4 will implement full profiling."""
-    # Verify dataset exists
+    """Get dataset profile with real statistics."""
+    # Load dataset
     try:
-        storage.get_dataset_path(dataset_id, user_id)
+        file_path = storage.get_dataset_path(dataset_id, user_id)
+        df = pd.read_csv(file_path)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Dataset not found")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error reading dataset: {str(e)}")
 
-    # Mock stats for now (real profiling in V1.0.4)
-    return {
-        "dataset_id": dataset_id,
-        "user_id": user_id,
-        "summary_stats": {
-            "n_rows": 150,
-            "n_cols": 5,
-            "numeric_cols": 4,
-            "categorical_cols": 1,
-            "missing_values": 0
-        }
-    }
+    # Profile it
+    profile = profile_dataset(df)
+
+    return DatasetProfileResponse(
+        dataset_id=dataset_id,
+        user_id=user_id,
+        profile=profile
+    )
