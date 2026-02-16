@@ -56,6 +56,6 @@ Thumbs.db
 # Logs
 *.log
 
-#plan
+# Plans 
 plan.md
-SETUP.md
+PROGRESS.md

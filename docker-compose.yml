@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  orchestrator:
+    build:
+      context: ./services/orchestrator
+      dockerfile: Dockerfile
+    container_name: forgebaselines-orchestrator
+    ports:
+      - "8000:8000"
+    environment:
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-local}
+      - S3_BUCKET=${S3_BUCKET:-forgebaselines-artifacts}
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - CLASSIFICATION_SERVICE_URL=http://classification:8001
+      - ENV=${ENV:-development}
+    volumes:
+      - ./services/orchestrator/app:/app/app  # Hot reload
+      - ./data:/app/data  # Persistent data storage
+    networks:
+      - forgebaselines
+    depends_on:
+      - mlflow
+      - classification
+
+  classification:
+    build:
+      context: ./services/classification
+      dockerfile: Dockerfile
+    container_name: forgebaselines-classification
+    ports:
+      - "8001:8001"
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - ENV=${ENV:-development}
+    volumes:
+      - ./services/classification/app:/app/app  # Hot reload
+      - ./data:/app/data  # Shared data access
+    networks:
+      - forgebaselines
+    depends_on:
+      - mlflow
+
+  mlflow:
+    build:
+      context: ./services/mlflow
+      dockerfile: Dockerfile
+    container_name: forgebaselines-mlflow
+    ports:
+      - "5001:5000"
+    volumes:
+      - mlflow-data:/mlflow  # Persistent MLflow metadata
+      - mlflow-artifacts:/mlflow-artifacts  # Persistent artifacts
+    networks:
+      - forgebaselines
+
+networks:
+  forgebaselines:
+    driver: bridge
+
+volumes:
+  mlflow-data:
+  mlflow-artifacts:
