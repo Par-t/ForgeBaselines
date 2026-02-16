@@ -9,10 +9,11 @@ class TrainRequest(BaseModel):
 
     model_config = ConfigDict(protected_namespaces=())
 
-    dataset_path: str = Field(..., description="Path to preprocessed dataset")
-    target_column: str = Field(..., description="Name of the target column")
+    X_train_path: str = Field(..., description="Path to preprocessed X_train (npy file)")
+    X_test_path: str = Field(..., description="Path to preprocessed X_test (npy file)")
+    y_train_path: str = Field(..., description="Path to preprocessed y_train (npy file)")
+    y_test_path: str = Field(..., description="Path to preprocessed y_test (npy file)")
     model_names: List[str] = Field(..., description="List of model names to train")
-    test_size: float = Field(0.2, ge=0.1, le=0.5, description="Test split size")
     user_id: str = Field(..., description="User ID for experiment tracking")
     experiment_id: str = Field(..., description="Unique experiment identifier")
 

@@ -1,45 +1,53 @@
 """Training endpoint."""
 
-from fastapi import APIRouter
+import numpy as np
+from fastapi import APIRouter, HTTPException
 from app.schemas.training import TrainRequest, TrainResponse, ModelResult
+from app.training.runner import run_training
 
 router = APIRouter(prefix="/train", tags=["training"])
 
 
 @router.post("", response_model=TrainResponse)
 async def train_models(request: TrainRequest):
-    """
-    Train classification models.
+    """Train classification models on preprocessed data."""
+    try:
+        # Load preprocessed arrays
+        X_train = np.load(request.X_train_path)
+        X_test = np.load(request.X_test_path)
+        y_train = np.load(request.y_train_path)
+        y_test = np.load(request.y_test_path)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=f"Preprocessed data not found: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error loading data: {str(e)}")
 
-    V1.0.7 will implement the full training logic with model registry.
-    V1.0.8 will add MLflow logging.
-    For now, returns mock results.
-    """
-    # Mock results for each requested model
-    mock_results = []
+    # Run training
+    results = run_training(
+        X_train=X_train,
+        y_train=y_train,
+        X_test=X_test,
+        y_test=y_test,
+        model_names=request.model_names,
+        experiment_id=request.experiment_id
+    )
 
-    for model_name in request.model_names:
-        # Different mock accuracies for different models
-        base_accuracy = {
-            "random_forest": 0.96,
-            "gradient_boosting": 0.94,
-            "logistic_regression": 0.91
-        }.get(model_name, 0.90)
-
-        mock_results.append(
-            ModelResult(
-                model_name=model_name,
-                accuracy=base_accuracy,
-                precision=base_accuracy - 0.01,
-                recall=base_accuracy - 0.01,
-                f1=base_accuracy - 0.01,
-                training_time=1.5
-            )
+    # Convert to response format
+    model_results = [
+        ModelResult(
+            model_name=r["model_name"],
+            accuracy=r["accuracy"],
+            precision=r["precision"],
+            recall=r["recall"],
+            f1=r["f1"],
+            training_time=r["training_time"]
         )
+        for r in results
+    ]
 
     return TrainResponse(
         experiment_id=request.experiment_id,
         user_id=request.user_id,
-        results=mock_results,
+        results=model_results,
         status="completed"
     )
