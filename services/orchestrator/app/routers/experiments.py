@@ -1,9 +1,44 @@
 """Experiment execution and results endpoints."""
 
-from fastapi import APIRouter, Depends
+import pandas as pd
+from fastapi import APIRouter, Depends, HTTPException
+
 from app.dependencies import get_user_id
+from app.schemas.experiment import RuntimeEstimateRequest, RuntimeEstimateResponse
+from app.services.storage import storage
+from app.services.profiler import profile_dataset
+from app.services.runtime_estimator import estimate_runtime
 
 router = APIRouter(prefix="/experiments", tags=["experiments"])
+
+
+@router.post("/estimate", response_model=RuntimeEstimateResponse)
+async def estimate_experiment_runtime(
+    request: RuntimeEstimateRequest,
+    user_id: str = Depends(get_user_id)
+):
+    """Estimate runtime for an experiment based on dataset profile."""
+    # Load dataset and profile it
+    try:
+        file_path = storage.get_dataset_path(request.dataset_id, user_id)
+        df = pd.read_csv(file_path)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error reading dataset: {str(e)}")
+
+    # Profile dataset
+    profile = profile_dataset(df)
+
+    # Estimate runtime
+    estimate = estimate_runtime(profile, request.model_names)
+
+    return RuntimeEstimateResponse(
+        dataset_id=request.dataset_id,
+        overall_estimate=estimate["overall_estimate"],
+        per_model=estimate["per_model"],
+        complexity_factors=estimate["complexity_factors"]
+    )
 
 
 @router.post("/run")
