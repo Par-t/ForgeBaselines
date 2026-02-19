@@ -56,6 +56,26 @@ services:
     networks:
       - forgebaselines
 
+  frontend:
+    build:
+      context: ./services/frontend
+      dockerfile: Dockerfile
+    container_name: forgebaselines-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - WATCHPACK_POLLING=true
+      - NEXT_TELEMETRY_DISABLED=1
+    volumes:
+      - ./services/frontend:/app
+      - /app/node_modules
+      - /app/.next
+    networks:
+      - forgebaselines
+    depends_on:
+      - orchestrator
+
 networks:
   forgebaselines:
     driver: bridge
