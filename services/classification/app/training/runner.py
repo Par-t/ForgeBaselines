@@ -16,7 +16,8 @@ def run_training(
     X_test: np.ndarray,
     y_test: np.ndarray,
     model_names: List[str],
-    experiment_id: str
+    experiment_id: str,
+    label_classes: List[str] = None
 ) -> List[Dict[str, Any]]:
     """Train multiple models and return results with MLflow logging.
 
@@ -45,6 +46,8 @@ def run_training(
             mlflow.log_param("n_train_samples", len(X_train))
             mlflow.log_param("n_test_samples", len(X_test))
             mlflow.log_param("n_features", X_train.shape[1])
+            if label_classes:
+                mlflow.log_param("label_classes", ",".join(label_classes))
 
             # Train
             start_time = time.time()

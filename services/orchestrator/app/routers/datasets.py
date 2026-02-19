@@ -5,8 +5,9 @@ from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 
 from app.dependencies import get_user_id
 from app.schemas.dataset import DatasetUploadResponse, DatasetProfileResponse
+from app.schemas.plan import SuggestColumnsResponse
 from app.services.storage import storage
-from app.services.profiler import profile_dataset
+from app.services.profiler import profile_dataset, suggest_column_config
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
@@ -68,4 +69,41 @@ async def get_dataset_profile(dataset_id: str, user_id: str = Depends(get_user_i
         dataset_id=dataset_id,
         user_id=user_id,
         profile=profile
+    )
+
+
+@router.get("/{dataset_id}/suggest-columns", response_model=SuggestColumnsResponse)
+async def suggest_columns(
+    dataset_id: str,
+    target_column: str,
+    user_id: str = Depends(get_user_id)
+):
+    """Auto-suggest column roles based on profiling heuristics.
+
+    Returns a pre-filled ColumnConfig identifying likely ID columns, high-cardinality
+    text columns, and constant columns to ignore. The caller should review the config,
+    optionally modify it (setting source='user'), and pass it to POST /experiments/run.
+    """
+    try:
+        file_path = storage.get_dataset_path(dataset_id, user_id)
+        df = pd.read_csv(file_path)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error reading dataset: {str(e)}")
+
+    if target_column not in df.columns:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Target column '{target_column}' not found. "
+                   f"Available columns: {df.columns.tolist()}"
+        )
+
+    profile = profile_dataset(df)
+    column_config, column_notes = suggest_column_config(profile, target_column)
+
+    return SuggestColumnsResponse(
+        dataset_id=dataset_id,
+        column_config=column_config,
+        column_notes=column_notes
     )

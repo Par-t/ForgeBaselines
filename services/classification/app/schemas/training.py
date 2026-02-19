@@ -14,6 +14,7 @@ class TrainRequest(BaseModel):
     y_train_path: str = Field(..., description="Path to preprocessed y_train (npy file)")
     y_test_path: str = Field(..., description="Path to preprocessed y_test (npy file)")
     model_names: List[str] = Field(..., description="List of model names to train")
+    label_classes: List[str] = Field(..., description="Class names in label-encoded order, e.g. ['cat','dog']")
     user_id: str = Field(..., description="User ID for experiment tracking")
     experiment_id: str = Field(..., description="Unique experiment identifier")
 
