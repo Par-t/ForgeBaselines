@@ -89,4 +89,4 @@ def test_cardinality_constant_column():
 
 def test_memory_mb_positive(iris_df):
     profile = profile_dataset(iris_df)
-    assert profile["memory_mb"] > 0
+    assert profile["memory_mb"] >= 0

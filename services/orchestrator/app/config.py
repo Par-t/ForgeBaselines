@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     # Storage
     storage_backend: str = "local"
     s3_bucket: str = "forgebaselines-artifacts"
+    data_path: str = "/app/data"
 
     # MLflow
     mlflow_tracking_uri: str = "http://localhost:5000"

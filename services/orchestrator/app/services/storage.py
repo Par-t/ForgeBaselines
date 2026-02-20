@@ -12,7 +12,7 @@ class StorageService:
     """Handle dataset storage — local (default) or S3 (when STORAGE_BACKEND=s3)."""
 
     def __init__(self):
-        self.base_path = Path("/app/data")
+        self.base_path = Path(settings.data_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
         self._s3 = None  # lazy-initialised boto3 client
 
