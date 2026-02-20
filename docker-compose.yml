@@ -14,6 +14,9 @@ services:
       - MLFLOW_TRACKING_URI=http://mlflow:5000
       - CLASSIFICATION_SERVICE_URL=http://classification:8001
       - ENV=${ENV:-development}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-2}
     volumes:
       - ./services/orchestrator/app:/app/app  # Hot reload
       - ./services/orchestrator/tests:/app/tests  # Test files
@@ -50,9 +53,14 @@ services:
     container_name: forgebaselines-mlflow
     ports:
       - "5001:5000"
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-2}
+      - MLFLOW_ARTIFACT_ROOT=${MLFLOW_ARTIFACT_ROOT:-/mlflow-artifacts}
     volumes:
       - mlflow-data:/mlflow  # Persistent MLflow metadata
-      - mlflow-artifacts:/mlflow-artifacts  # Persistent artifacts
+      - mlflow-artifacts:/mlflow-artifacts  # Persistent artifacts (local mode)
     networks:
       - forgebaselines
 

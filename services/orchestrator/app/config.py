@@ -21,7 +21,9 @@ class Settings(BaseSettings):
     classification_service_url: str = "http://localhost:8001"
 
     # AWS
-    aws_region: str = "us-east-1"
+    aws_default_region: str = "us-east-2"
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
 
     # Environment
     env: str = "development"
