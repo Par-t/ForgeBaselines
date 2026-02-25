@@ -76,7 +76,7 @@ services:
       context: ./services/frontend
       dockerfile: Dockerfile
       args:
-        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://18.118.86.95/api}
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://forgebaselines.mooo.com/api}
     container_name: forgebaselines-frontend
     environment:
       - NEXT_TELEMETRY_DISABLED=1

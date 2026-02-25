@@ -20,6 +20,8 @@ jobs:
       - name: Run tests
         run: pytest tests/ -v --tb=short
         working-directory: services/orchestrator
+        env:
+          DATA_PATH: /tmp/forgebaselines-test
 
   test-classification:
     runs-on: ubuntu-latest
@@ -34,6 +36,8 @@ jobs:
       - name: Run tests
         run: pytest tests/ -v --tb=short
         working-directory: services/classification
+        env:
+          MLFLOW_TRACKING_URI: file:///tmp/mlruns
 
   build-frontend:
     runs-on: ubuntu-latest
@@ -43,7 +47,7 @@ jobs:
         with:
           node-version: "20"
       - name: Install dependencies
-        run: npm ci
+        run: npm install
         working-directory: services/frontend
       - name: Build
         run: npm run build
