@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.dependencies import get_user_id
 from app.schemas.experiment import RuntimeEstimateRequest, RuntimeEstimateResponse
 from app.schemas.plan import ExperimentRunRequest, ExperimentRunResponse
+from app.config import settings
 from app.services.storage import storage
 from app.services.profiler import profile_dataset
 from app.services.runtime_estimator import estimate_runtime
@@ -101,7 +102,7 @@ async def run_experiment(
 
     # 5. Save preprocessed arrays to temp location
     experiment_id = str(uuid.uuid4())
-    temp_dir = Path(f"/app/data/{user_id}/{request.dataset_id}/preprocessed/{experiment_id}")
+    temp_dir = Path(f"{settings.data_path}/{user_id}/{request.dataset_id}/preprocessed/{experiment_id}")
     temp_dir.mkdir(parents=True, exist_ok=True)
 
     X_train_path = temp_dir / "X_train.npy"

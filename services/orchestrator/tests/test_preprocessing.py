@@ -8,7 +8,10 @@ from app.preprocessing.pipeline import preprocess_dataset
 
 def test_preprocess_iris():
     """Test preprocessing on Iris dataset."""
-    df = pd.read_csv("/app/data/data_dev/Iris.csv")
+    from sklearn.datasets import load_iris
+    iris = load_iris(as_frame=True)
+    df = iris.frame.rename(columns={"target": "Species"})
+    df["Species"] = df["Species"].map({0: "Iris-setosa", 1: "Iris-versicolor", 2: "Iris-virginica"})
 
     X_train, X_test, y_train, y_test, preprocessor, label_classes = preprocess_dataset(
         df, target_column="Species", test_size=0.2
