@@ -9,7 +9,18 @@ classification tasks. Upload a CSV, configure your experiment, get a ranked lead
 
 ## Architecture
 
-Four services on a shared Docker network:
+```
+┌──────────────┐       ┌──────────────────┐       ┌──────────────────┐
+│   Frontend   │       │   Orchestrator   │       │  Classification  │
+│  (Next.js)   │──────▶│   (FastAPI)      │──────▶│   (FastAPI)      │
+│  port 3000   │       │   port 8000      │       │   port 8001      │
+└──────────────┘       └───────┬──────────┘       └────────┬─────────┘
+                               │                           │
+                               │       ┌───────────┐       │
+                               └──────▶│  MLflow   │◀──────┘
+                                       │  port 5001│
+                                       └───────────┘
+```
 
 | Service        | Port | Role                                                   |
 |----------------|------|--------------------------------------------------------|
@@ -32,10 +43,10 @@ internally. Classification never receives direct external traffic.
 ## Local Setup
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/Parth-Agarwal216/ForgeBaselines.git
 cd ForgeBaselines
 cp .env.example .env        # defaults work out of the box
-docker-compose up --build   # first build ~3-5 min
+docker compose up --build   # first build ~3-5 min
 ```
 
 | URL                        | What                       |
@@ -43,6 +54,31 @@ docker-compose up --build   # first build ~3-5 min
 | http://localhost:3000      | Main UI                    |
 | http://localhost:8000/docs | Orchestrator API (Swagger) |
 | http://localhost:5001      | MLflow experiment tracker  |
+
+---
+
+## Seed Data
+
+Upload sample datasets so you can test the full pipeline immediately:
+
+```bash
+pip install pandas scikit-learn requests   # one-time, host machine
+python scripts/seed_test_data.py
+```
+
+This uploads three datasets:
+
+| Dataset  | Rows | Classes | Features                   |
+|----------|------|---------|----------------------------|
+| Iris     | 150  | 3       | 4 numeric                  |
+| Wine     | 178  | 3       | 13 numeric                 |
+| Titanic  | 891  | 2       | mixed numeric + categorical|
+
+You can also target a remote deployment:
+
+```bash
+python scripts/seed_test_data.py --base-url http://forgebaselines.mooo.com/api
+```
 
 ---
 
@@ -58,9 +94,20 @@ docker-compose up --build   # first build ~3-5 min
 ## Tests
 
 ```bash
-docker-compose exec orchestrator pytest tests/ -v --tb=short
-docker-compose exec classification pytest tests/ -v --tb=short
+docker compose exec orchestrator pytest tests/ -v --tb=short
+docker compose exec classification pytest tests/ -v --tb=short
 ```
+
+---
+
+## CI/CD
+
+Every push to `main` triggers GitHub Actions:
+
+1. **CI** — runs pytest for both backend services + `npm run build` for frontend (3 parallel jobs)
+2. **Deploy** — on CI success, SSHes into EC2 and rebuilds with `docker compose`
+
+Live at: [forgebaselines.mooo.com](http://forgebaselines.mooo.com)
 
 ---
 
@@ -70,15 +117,15 @@ Hot reload is on for all services. Edit Python files under `services/*/app/` or
 frontend files under `services/frontend/app/` — changes reflect immediately.
 
 ```bash
-docker-compose logs -f orchestrator    # tail a service
-docker-compose up --build frontend     # rebuild after dep changes
-docker-compose down                    # stop everything
+docker compose logs -f orchestrator    # tail a service
+docker compose up --build frontend     # rebuild after dep changes
+docker compose down                    # stop everything
 ```
 
 ---
 
 ## Roadmap
 
-- **V1.1** S3 storage · EC2 deployment · CI/CD
+- **V1.1** S3 storage · EC2 deployment · CI/CD · seed data ✅
 - **V1.2** Firebase auth · per-user isolation
 - **V2**   Conversational agent (LangGraph + GPT-4o) with chain-of-thought planning
