@@ -2,13 +2,12 @@
 
 import { useAuth } from '@/lib/auth-context';
 import { isSignInWithEmailLink } from 'firebase/auth';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 export default function LoginPage() {
   const { user, sendMagicLink, completeMagicLink } = useAuth();
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const [email, setEmail] = useState('');
   const [linkSent, setLinkSent] = useState(false);
