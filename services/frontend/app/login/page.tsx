@@ -2,6 +2,7 @@
 
 import { useAuth } from '@/lib/auth-context';
 import { isSignInWithEmailLink } from 'firebase/auth';
+import { auth } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
@@ -25,7 +26,7 @@ export default function LoginPage() {
   // Handle magic link completion
   useEffect(() => {
     const completeSignIn = async () => {
-      if (!isSignInWithEmailLink(undefined as any, window.location.href)) {
+      if (!isSignInWithEmailLink(auth, window.location.href)) {
         return;
       }
 
