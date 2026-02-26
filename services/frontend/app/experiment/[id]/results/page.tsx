@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { api, ExperimentResultsResponse } from '@/lib/api'
+import { ProtectedRoute } from '@/components/protected-route'
 
 const MODEL_LABELS: Record<string, string> = {
   logistic_regression: 'Logistic Regression',
@@ -15,7 +16,7 @@ function pct(n: number) {
   return (n * 100).toFixed(1) + '%'
 }
 
-export default function ResultsPage() {
+function ResultsPageContent() {
   const params = useParams()
   const experimentId = params.id as string
 
@@ -171,5 +172,13 @@ export default function ResultsPage() {
         </Link>
       </div>
     </div>
+  )
+}
+
+export default function ResultsPage() {
+  return (
+    <ProtectedRoute>
+      <ResultsPageContent />
+    </ProtectedRoute>
   )
 }

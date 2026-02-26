@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { api, DatasetUploadResponse } from '@/lib/api'
+import { ProtectedRoute } from '@/components/protected-route'
 
 function Spinner({ size = 5 }: { size?: number }) {
   return (
@@ -12,7 +13,7 @@ function Spinner({ size = 5 }: { size?: number }) {
   )
 }
 
-export default function UploadPage() {
+function UploadPageContent() {
   const [isDragging, setIsDragging] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [result, setResult] = useState<DatasetUploadResponse | null>(null)
@@ -143,5 +144,13 @@ export default function UploadPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function UploadPage() {
+  return (
+    <ProtectedRoute>
+      <UploadPageContent />
+    </ProtectedRoute>
   )
 }

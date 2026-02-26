@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
 
+    # Firebase
+    firebase_service_account_json: str = "{}"
+
     # Environment
     env: str = "development"
 

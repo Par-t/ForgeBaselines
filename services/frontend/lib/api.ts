@@ -1,5 +1,12 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+// Token getter — set by AuthContext after mount
+let tokenGetter: (() => Promise<string | null>) | null = null;
+
+export function setTokenGetter(fn: () => Promise<string | null>) {
+  tokenGetter = fn;
+}
+
 export interface DatasetUploadResponse {
   dataset_id: string;
   filename: string;
@@ -81,7 +88,17 @@ export interface ExperimentResultsResponse {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, options);
+  const headers = new Headers(options?.headers);
+
+  // Attach auth token if available
+  if (tokenGetter) {
+    const token = await tokenGetter();
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+  }
+
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   if (!res.ok) {
     let detail = '';
     try {

@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import health, datasets, experiments
 from app.config import settings
+from app.firebase import init_firebase
 
 
 @asynccontextmanager
@@ -15,6 +16,7 @@ async def lifespan(app: FastAPI):
     print(f"Starting orchestrator service in {settings.env} mode")
     print(f"MLflow tracking URI: {settings.mlflow_tracking_uri}")
     print(f"Storage backend: {settings.storage_backend}")
+    init_firebase()
     yield
     # Shutdown
     print("Shutting down orchestrator service")

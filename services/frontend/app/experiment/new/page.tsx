@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { api, SuggestColumnsResponse } from '@/lib/api'
+import { ProtectedRoute } from '@/components/protected-route'
 
 const MODELS = [
   { id: 'logistic_regression', label: 'Logistic Regression' },
@@ -260,15 +261,17 @@ function NewExperimentForm() {
 
 export default function NewExperimentPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex items-center gap-3 text-gray-400">
-          <div className="w-5 h-5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
-          Loading...
-        </div>
-      }
-    >
-      <NewExperimentForm />
-    </Suspense>
+    <ProtectedRoute>
+      <Suspense
+        fallback={
+          <div className="flex items-center gap-3 text-gray-400">
+            <div className="w-5 h-5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+            Loading...
+          </div>
+        }
+      >
+        <NewExperimentForm />
+      </Suspense>
+    </ProtectedRoute>
   )
 }

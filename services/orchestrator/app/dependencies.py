@@ -1,12 +1,28 @@
 """Shared dependencies for FastAPI routes."""
 
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-def get_user_id() -> str:
-    """
-    Get the current user ID.
+from app.firebase import verify_id_token
 
-    In V1, this returns a hardcoded default user.
-    In V1.2, this will be replaced with Firebase Auth middleware
-    that extracts the user_id from the JWT token.
+security = HTTPBearer(auto_error=False)
+
+
+def get_user_id(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+) -> str:
+    """Extract and validate Firebase ID token from Authorization header.
+
+    Returns the Firebase UID as the user_id.
+    In V1.2, this replaces the hardcoded 'default_user'.
     """
-    return "default_user"
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    try:
+        decoded_token = verify_id_token(credentials.credentials)
+        return decoded_token["uid"]
+    except Exception:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired authentication token",
+        )
