@@ -6,10 +6,11 @@ import numpy as np
 import pandas as pd
 import httpx
 from pathlib import Path
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.dependencies import get_user_id
-from app.schemas.experiment import RuntimeEstimateRequest, RuntimeEstimateResponse
+from app.schemas.experiment import RuntimeEstimateRequest, RuntimeEstimateResponse, ExperimentListItem, ExperimentListResponse
 from app.schemas.plan import ExperimentRunRequest, ExperimentRunResponse
 from app.config import settings
 from app.services.storage import storage
@@ -150,7 +151,25 @@ async def run_experiment(
 
 @router.get("/{experiment_id}/results")
 async def get_experiment_results(experiment_id: str, user_id: str = Depends(get_user_id)):
-    """Get experiment results from MLflow."""
+    """Get experiment results from MLflow.
+
+    Verifies the experiment belongs to the current user by checking the filesystem path.
+    """
+    # Security check: Verify this experiment belongs to the current user
+    user_preprocessed_dir = Path(settings.data_path) / user_id / "*" / "preprocessed" / experiment_id
+    # Check if experiment dir exists under this user's data path
+    user_data_dir = Path(settings.data_path) / user_id
+    experiment_exists_for_user = False
+    if user_data_dir.exists():
+        for dataset_dir in user_data_dir.iterdir():
+            exp_path = dataset_dir / "preprocessed" / experiment_id
+            if exp_path.exists():
+                experiment_exists_for_user = True
+                break
+
+    if not experiment_exists_for_user:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+
     # Query MLflow for experiment results
     mlflow_url = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
 
@@ -219,3 +238,37 @@ async def get_experiment_results(experiment_id: str, user_id: str = Depends(get_
         "label_mapping": label_mapping,
         "leaderboard": leaderboard
     }
+
+
+@router.get("", response_model=ExperimentListResponse)
+async def list_experiments(user_id: str = Depends(get_user_id)):
+    """List all experiments for the current user (via filesystem check)."""
+    # List experiments by checking which experiment directories exist for this user
+    user_dir = Path(settings.data_path) / user_id
+    experiments = []
+
+    if not user_dir.exists():
+        return ExperimentListResponse(experiments=[])
+
+    # Find all preprocessed experiment directories
+    for dataset_dir in user_dir.iterdir():
+        if not dataset_dir.is_dir():
+            continue
+        preprocessed_dir = dataset_dir / "preprocessed"
+        if not preprocessed_dir.exists():
+            continue
+
+        for exp_dir in preprocessed_dir.iterdir():
+            if not exp_dir.is_dir():
+                continue
+            experiment_id = exp_dir.name
+
+            experiments.append(
+                ExperimentListItem(
+                    experiment_id=experiment_id,
+                    status="completed",  # All experiments in preprocessed dir are completed
+                    run_count=1,  # One training run per experiment
+                )
+            )
+
+    return ExperimentListResponse(experiments=experiments)

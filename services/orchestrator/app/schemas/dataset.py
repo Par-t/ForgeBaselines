@@ -18,3 +18,16 @@ class DatasetProfileResponse(BaseModel):
     dataset_id: str
     user_id: str
     profile: Dict[str, Any]
+
+
+class DatasetListItem(BaseModel):
+    """Single dataset in list."""
+    dataset_id: str
+    filename: str
+    rows: int
+    cols: int
+
+
+class DatasetListResponse(BaseModel):
+    """Response for listing datasets."""
+    datasets: List[DatasetListItem]

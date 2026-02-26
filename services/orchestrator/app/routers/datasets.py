@@ -1,13 +1,16 @@
 """Dataset management endpoints."""
 
+from pathlib import Path
+from typing import List
 import pandas as pd
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 
 from app.dependencies import get_user_id
-from app.schemas.dataset import DatasetUploadResponse, DatasetProfileResponse
+from app.schemas.dataset import DatasetUploadResponse, DatasetProfileResponse, DatasetListItem, DatasetListResponse
 from app.schemas.plan import SuggestColumnsResponse
 from app.services.storage import storage
 from app.services.profiler import profile_dataset, suggest_column_config
+from app.config import settings
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
@@ -107,3 +110,39 @@ async def suggest_columns(
         column_config=column_config,
         column_notes=column_notes
     )
+
+
+@router.get("", response_model=DatasetListResponse)
+async def list_datasets(user_id: str = Depends(get_user_id)):
+    """List all datasets for the current user."""
+    user_dir = Path(settings.data_path) / user_id
+    datasets = []
+
+    if not user_dir.exists():
+        return DatasetListResponse(datasets=[])
+
+    # Iterate through user directories (each one is a dataset_id)
+    for dataset_dir in user_dir.iterdir():
+        if not dataset_dir.is_dir():
+            continue
+        dataset_id = dataset_dir.name
+        csv_path = dataset_dir / "dataset.csv"
+
+        if not csv_path.exists():
+            continue
+
+        try:
+            df = pd.read_csv(csv_path)
+            datasets.append(
+                DatasetListItem(
+                    dataset_id=dataset_id,
+                    filename=f"{dataset_id}.csv",  # Original name not stored, use ID
+                    rows=len(df),
+                    cols=len(df.columns),
+                )
+            )
+        except Exception:
+            # Skip corrupted files
+            pass
+
+    return DatasetListResponse(datasets=datasets)
