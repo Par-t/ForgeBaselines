@@ -1,17 +1,22 @@
 """Experiment execution and results endpoints."""
 
+import csv
+import io
 import os
 import uuid
 import numpy as np
 import pandas as pd
 import httpx
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 
 from app.dependencies import get_user_id
 from app.schemas.experiment import RuntimeEstimateRequest, RuntimeEstimateResponse, ExperimentListItem, ExperimentListResponse
 from app.schemas.plan import ExperimentRunRequest, ExperimentRunResponse
+from app.schemas.dataset import DeleteResponse
 from app.config import settings
 from app.services.storage import storage
 from app.services.profiler import profile_dataset
@@ -27,7 +32,6 @@ async def estimate_experiment_runtime(
     user_id: str = Depends(get_user_id)
 ):
     """Estimate runtime for an experiment based on dataset profile."""
-    # Load dataset and profile it
     try:
         file_path = storage.get_dataset_path(request.dataset_id, user_id)
         df = pd.read_csv(file_path)
@@ -36,10 +40,7 @@ async def estimate_experiment_runtime(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error reading dataset: {str(e)}")
 
-    # Profile dataset
     profile = profile_dataset(df)
-
-    # Estimate runtime
     estimate = estimate_runtime(profile, request.model_names)
 
     return RuntimeEstimateResponse(
@@ -56,7 +57,6 @@ async def run_experiment(
     user_id: str = Depends(get_user_id)
 ):
     """Run a baseline experiment end-to-end."""
-    # 1. Validate dataset exists
     try:
         file_path = storage.get_dataset_path(request.dataset_id, user_id)
         df = pd.read_csv(file_path)
@@ -65,14 +65,12 @@ async def run_experiment(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error reading dataset: {str(e)}")
 
-    # 2. Validate target column
     if request.target_column not in df.columns:
         raise HTTPException(
             status_code=400,
             detail=f"Target column '{request.target_column}' not found in dataset. Available columns: {df.columns.tolist()}"
         )
 
-    # 2b. Validate column_config references columns that exist
     if request.column_config is not None:
         all_cols = set(df.columns)
         bad_ignore = set(request.column_config.ignore_columns) - all_cols - {request.target_column}
@@ -88,11 +86,9 @@ async def run_experiment(
                 }
             )
 
-    # 3. Profile dataset and estimate runtime
     profile = profile_dataset(df)
     runtime_estimate = estimate_runtime(profile, request.model_names)
 
-    # 4. Preprocess dataset
     try:
         X_train, X_test, y_train, y_test, preprocessor, label_classes = preprocess_dataset(
             df, request.target_column, request.test_size,
@@ -101,22 +97,15 @@ async def run_experiment(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Preprocessing failed: {str(e)}")
 
-    # 5. Save preprocessed arrays to temp location
     experiment_id = str(uuid.uuid4())
     temp_dir = Path(f"{settings.data_path}/{user_id}/{request.dataset_id}/preprocessed/{experiment_id}")
     temp_dir.mkdir(parents=True, exist_ok=True)
 
-    X_train_path = temp_dir / "X_train.npy"
-    X_test_path = temp_dir / "X_test.npy"
-    y_train_path = temp_dir / "y_train.npy"
-    y_test_path = temp_dir / "y_test.npy"
+    np.save(temp_dir / "X_train.npy", X_train)
+    np.save(temp_dir / "X_test.npy", X_test)
+    np.save(temp_dir / "y_train.npy", y_train)
+    np.save(temp_dir / "y_test.npy", y_test)
 
-    np.save(X_train_path, X_train)
-    np.save(X_test_path, X_test)
-    np.save(y_train_path, y_train)
-    np.save(y_test_path, y_test)
-
-    # 6. Call classification service
     classification_url = os.getenv("CLASSIFICATION_SERVICE_URL", "http://classification:8001")
 
     async with httpx.AsyncClient(timeout=300.0) as client:
@@ -124,10 +113,10 @@ async def run_experiment(
             response = await client.post(
                 f"{classification_url}/train",
                 json={
-                    "X_train_path": str(X_train_path),
-                    "X_test_path": str(X_test_path),
-                    "y_train_path": str(y_train_path),
-                    "y_test_path": str(y_test_path),
+                    "X_train_path": str(temp_dir / "X_train.npy"),
+                    "X_test_path": str(temp_dir / "X_test.npy"),
+                    "y_train_path": str(temp_dir / "y_train.npy"),
+                    "y_test_path": str(temp_dir / "y_test.npy"),
                     "model_names": request.model_names,
                     "label_classes": label_classes,
                     "user_id": user_id,
@@ -138,7 +127,6 @@ async def run_experiment(
         except httpx.HTTPError as e:
             raise HTTPException(status_code=500, detail=f"Training service error: {str(e)}")
 
-    # 7. Return experiment info
     return ExperimentRunResponse(
         experiment_id=experiment_id,
         dataset_id=request.dataset_id,
@@ -151,46 +139,137 @@ async def run_experiment(
 
 @router.get("/{experiment_id}/results")
 async def get_experiment_results(experiment_id: str, user_id: str = Depends(get_user_id)):
-    """Get experiment results from MLflow.
-
-    Verifies the experiment belongs to the current user by checking the filesystem path.
-    """
-    # Security check: Verify this experiment belongs to the current user
-    user_preprocessed_dir = Path(settings.data_path) / user_id / "*" / "preprocessed" / experiment_id
-    # Check if experiment dir exists under this user's data path
-    user_data_dir = Path(settings.data_path) / user_id
-    experiment_exists_for_user = False
-    if user_data_dir.exists():
-        for dataset_dir in user_data_dir.iterdir():
-            exp_path = dataset_dir / "preprocessed" / experiment_id
-            if exp_path.exists():
-                experiment_exists_for_user = True
-                break
-
-    if not experiment_exists_for_user:
+    """Get experiment results from MLflow."""
+    dataset_id = _find_dataset_id_for_experiment(experiment_id, user_id)
+    if dataset_id is None:
         raise HTTPException(status_code=404, detail="Experiment not found")
 
-    # Query MLflow for experiment results
     mlflow_url = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
+    leaderboard, label_mapping = await _fetch_mlflow_results(mlflow_url, experiment_id)
 
+    return {
+        "experiment_id": experiment_id,
+        "user_id": user_id,
+        "status": "completed",
+        "label_mapping": label_mapping,
+        "leaderboard": leaderboard,
+    }
+
+
+@router.get("/{experiment_id}/results/download")
+async def download_experiment_results(experiment_id: str, user_id: str = Depends(get_user_id)):
+    """Download experiment leaderboard as a CSV file."""
+    dataset_id = _find_dataset_id_for_experiment(experiment_id, user_id)
+    if dataset_id is None:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+
+    mlflow_url = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
+    leaderboard, _ = await _fetch_mlflow_results(mlflow_url, experiment_id)
+
+    buf = io.StringIO()
+    writer = csv.DictWriter(
+        buf,
+        fieldnames=["model_name", "accuracy", "precision", "recall", "f1", "training_time"],
+    )
+    writer.writeheader()
+    for row in leaderboard:
+        writer.writerow(row)
+
+    buf.seek(0)
+    filename = f"results_{experiment_id[:8]}.csv"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.delete("/{experiment_id}", response_model=DeleteResponse)
+async def delete_experiment(experiment_id: str, user_id: str = Depends(get_user_id)):
+    """Delete an experiment (preprocessed data + MLflow runs). Leaves dataset intact."""
+    dataset_id = _find_dataset_id_for_experiment(experiment_id, user_id)
+    if dataset_id is None:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+
+    mlflow_url = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
+    async with httpx.AsyncClient() as client:
+        from app.routers.datasets import _delete_mlflow_experiment
+        await _delete_mlflow_experiment(client, mlflow_url, experiment_id)
+
+    storage.delete_experiment(user_id, dataset_id, experiment_id)
+
+    return DeleteResponse(message=f"Experiment {experiment_id} deleted")
+
+
+@router.get("", response_model=ExperimentListResponse)
+async def list_experiments(user_id: str = Depends(get_user_id)):
+    """List all experiments for the current user."""
+    user_dir = Path(settings.data_path) / user_id
+    experiments = []
+
+    if not user_dir.exists():
+        return ExperimentListResponse(experiments=[])
+
+    for dataset_dir in user_dir.iterdir():
+        if not dataset_dir.is_dir():
+            continue
+        preprocessed_dir = dataset_dir / "preprocessed"
+        if not preprocessed_dir.exists():
+            continue
+
+        dataset_id = dataset_dir.name
+        for exp_dir in preprocessed_dir.iterdir():
+            if not exp_dir.is_dir():
+                continue
+
+            mtime = exp_dir.stat().st_mtime
+            created_at = datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+
+            experiments.append(
+                ExperimentListItem(
+                    experiment_id=exp_dir.name,
+                    dataset_id=dataset_id,
+                    status="completed",
+                    run_count=1,
+                    created_at=created_at,
+                )
+            )
+
+    experiments.sort(key=lambda e: e.created_at, reverse=True)
+    return ExperimentListResponse(experiments=experiments)
+
+
+# ------------------------------------------------------------------ helpers
+
+def _find_dataset_id_for_experiment(experiment_id: str, user_id: str):
+    """Return the dataset_id that owns this experiment, or None if not found."""
+    user_data_dir = Path(settings.data_path) / user_id
+    if not user_data_dir.exists():
+        return None
+    for dataset_dir in user_data_dir.iterdir():
+        exp_path = dataset_dir / "preprocessed" / experiment_id
+        if exp_path.exists():
+            return dataset_dir.name
+    return None
+
+
+async def _fetch_mlflow_results(mlflow_url: str, experiment_id: str):
+    """Query MLflow for leaderboard rows. Returns (leaderboard, label_mapping)."""
     async with httpx.AsyncClient() as client:
         try:
-            # MLflow uses our UUID as experiment *name*, assigns its own numeric ID
-            # First: look up the numeric ID by name
-            exp_response = await client.get(
+            exp_resp = await client.get(
                 f"{mlflow_url}/api/2.0/mlflow/experiments/get-by-name",
-                params={"experiment_name": experiment_id}
+                params={"experiment_name": experiment_id},
             )
-            exp_response.raise_for_status()
-            mlflow_exp_id = exp_response.json()["experiment"]["experiment_id"]
+            exp_resp.raise_for_status()
+            mlflow_exp_id = exp_resp.json()["experiment"]["experiment_id"]
 
-            # Then: search runs using the numeric ID
-            response = await client.post(
+            runs_resp = await client.post(
                 f"{mlflow_url}/api/2.0/mlflow/runs/search",
-                json={"experiment_ids": [mlflow_exp_id], "max_results": 100}
+                json={"experiment_ids": [mlflow_exp_id], "max_results": 100},
             )
-            response.raise_for_status()
-            data = response.json()
+            runs_resp.raise_for_status()
+            data = runs_resp.json()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 raise HTTPException(status_code=404, detail="Experiment not found in MLflow")
@@ -201,7 +280,6 @@ async def get_experiment_results(experiment_id: str, user_id: str = Depends(get_
     if "runs" not in data or not data["runs"]:
         raise HTTPException(status_code=404, detail="No results found for this experiment")
 
-    # Extract leaderboard and label mapping from runs
     leaderboard = []
     label_classes = None
 
@@ -209,7 +287,6 @@ async def get_experiment_results(experiment_id: str, user_id: str = Depends(get_
         metrics_dict = {m["key"]: m["value"] for m in run["data"]["metrics"]}
         params_dict = {p["key"]: p["value"] for p in run["data"]["params"]}
 
-        # Extract label mapping once (same for all runs in this experiment)
         if label_classes is None and "label_classes" in params_dict:
             label_classes = params_dict["label_classes"].split(",")
 
@@ -219,56 +296,12 @@ async def get_experiment_results(experiment_id: str, user_id: str = Depends(get_
             "precision": metrics_dict.get("precision", 0.0),
             "recall": metrics_dict.get("recall", 0.0),
             "f1": metrics_dict.get("f1", 0.0),
-            "training_time": metrics_dict.get("training_time", 0.0)
+            "training_time": metrics_dict.get("training_time", 0.0),
         })
 
-    # Sort by F1 descending
     leaderboard.sort(key=lambda x: x["f1"], reverse=True)
-
-    # Build label mapping: {0: "Iris-setosa", 1: "Iris-versicolor", ...}
     label_mapping = (
         {str(i): cls for i, cls in enumerate(label_classes)}
         if label_classes else {}
     )
-
-    return {
-        "experiment_id": experiment_id,
-        "user_id": user_id,
-        "status": "completed",
-        "label_mapping": label_mapping,
-        "leaderboard": leaderboard
-    }
-
-
-@router.get("", response_model=ExperimentListResponse)
-async def list_experiments(user_id: str = Depends(get_user_id)):
-    """List all experiments for the current user (via filesystem check)."""
-    # List experiments by checking which experiment directories exist for this user
-    user_dir = Path(settings.data_path) / user_id
-    experiments = []
-
-    if not user_dir.exists():
-        return ExperimentListResponse(experiments=[])
-
-    # Find all preprocessed experiment directories
-    for dataset_dir in user_dir.iterdir():
-        if not dataset_dir.is_dir():
-            continue
-        preprocessed_dir = dataset_dir / "preprocessed"
-        if not preprocessed_dir.exists():
-            continue
-
-        for exp_dir in preprocessed_dir.iterdir():
-            if not exp_dir.is_dir():
-                continue
-            experiment_id = exp_dir.name
-
-            experiments.append(
-                ExperimentListItem(
-                    experiment_id=experiment_id,
-                    status="completed",  # All experiments in preprocessed dir are completed
-                    run_count=1,  # One training run per experiment
-                )
-            )
-
-    return ExperimentListResponse(experiments=experiments)
+    return leaderboard, label_mapping

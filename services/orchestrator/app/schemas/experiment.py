@@ -21,8 +21,10 @@ class RuntimeEstimateResponse(BaseModel):
 class ExperimentListItem(BaseModel):
     """Single experiment in list."""
     experiment_id: str
+    dataset_id: str
     status: str
     run_count: int
+    created_at: str
 
 
 class ExperimentListResponse(BaseModel):

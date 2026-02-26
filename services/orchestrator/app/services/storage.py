@@ -1,6 +1,9 @@
 """Storage service for dataset files."""
 
+import json
+import shutil
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Tuple
 from fastapi import UploadFile
@@ -45,6 +48,56 @@ class StorageService:
             )
 
         return dataset_id, str(local_path)
+
+    def save_dataset_metadata(
+        self, user_id: str, dataset_id: str, filename: str, rows: int, cols: int
+    ) -> None:
+        """Persist original filename, dimensions, and upload timestamp alongside CSV."""
+        meta_path = self.base_path / user_id / dataset_id / "metadata.json"
+        meta = {
+            "filename": filename,
+            "uploaded_at": datetime.now(timezone.utc).isoformat(),
+            "rows": rows,
+            "cols": cols,
+        }
+        with open(meta_path, "w") as f:
+            json.dump(meta, f)
+
+    def get_dataset_metadata(self, user_id: str, dataset_id: str) -> dict:
+        """Read dataset metadata. Falls back to filesystem inference on missing file."""
+        meta_path = self.base_path / user_id / dataset_id / "metadata.json"
+        if meta_path.exists():
+            with open(meta_path) as f:
+                return json.load(f)
+        # Legacy datasets without metadata.json
+        csv_path = self.base_path / user_id / dataset_id / "dataset.csv"
+        mtime = csv_path.stat().st_mtime if csv_path.exists() else 0
+        return {
+            "filename": f"{dataset_id}.csv",
+            "uploaded_at": datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat(),
+            "rows": 0,
+            "cols": 0,
+        }
+
+    def delete_dataset(self, user_id: str, dataset_id: str) -> None:
+        """Delete entire dataset directory (CSV + preprocessed data) and S3 object."""
+        local_dir = self.base_path / user_id / dataset_id
+        if local_dir.exists():
+            shutil.rmtree(local_dir)
+
+        if settings.storage_backend == "s3":
+            self._s3_client.delete_object(
+                Bucket=settings.s3_bucket,
+                Key=self._s3_key(user_id, dataset_id),
+            )
+
+    def delete_experiment(self, user_id: str, dataset_id: str, experiment_id: str) -> None:
+        """Delete preprocessed experiment directory only (leaves dataset intact)."""
+        exp_dir = (
+            self.base_path / user_id / dataset_id / "preprocessed" / experiment_id
+        )
+        if exp_dir.exists():
+            shutil.rmtree(exp_dir)
 
     def get_dataset_path(self, dataset_id: str, user_id: str) -> str:
         """Return local path to dataset, downloading from S3 on cache miss.

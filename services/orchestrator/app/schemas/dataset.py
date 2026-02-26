@@ -26,8 +26,15 @@ class DatasetListItem(BaseModel):
     filename: str
     rows: int
     cols: int
+    created_at: str
+    experiment_count: int
 
 
 class DatasetListResponse(BaseModel):
     """Response for listing datasets."""
     datasets: List[DatasetListItem]
+
+
+class DeleteResponse(BaseModel):
+    """Generic delete confirmation."""
+    message: str
