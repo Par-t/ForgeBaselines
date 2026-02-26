@@ -22,6 +22,18 @@ function ResultsPageContent() {
 
   const [results, setResults] = useState<ExperimentResultsResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [downloading, setDownloading] = useState(false)
+
+  const handleDownload = async () => {
+    setDownloading(true)
+    try {
+      await api.downloadResults(experimentId)
+    } catch {
+      // ignore
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   useEffect(() => {
     if (!experimentId) return
@@ -159,16 +171,23 @@ function ResultsPageContent() {
       {/* Actions */}
       <div className="flex gap-3">
         <Link
-          href="/upload"
+          href="/dashboard"
           className="flex-1 text-center bg-gray-800 hover:bg-gray-700 text-gray-300 py-2.5 rounded-lg text-sm font-medium transition-colors"
         >
-          Upload New Dataset
+          Dashboard
         </Link>
+        <button
+          onClick={handleDownload}
+          disabled={downloading}
+          className="flex-1 text-center bg-gray-800 hover:bg-gray-700 text-gray-300 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+        >
+          {downloading ? 'Downloading…' : 'Download CSV'}
+        </button>
         <Link
           href="/experiment/new"
           className="flex-1 text-center bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
         >
-          Run Another Experiment
+          Run Another
         </Link>
       </div>
     </div>
