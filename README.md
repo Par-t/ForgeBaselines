@@ -87,7 +87,9 @@ python scripts/seed_test_data.py --base-url http://forgebaselines.mooo.com/api
 1. **Upload** — drop a CSV at `/upload`
 2. **Configure** — pick target column, review auto-detected column roles, select models
 3. **Run** — trains Logistic Regression, Random Forest, and Gradient Boosting
-4. **Results** — leaderboard ranked by F1 with per-model metrics
+4. **Results** — leaderboard ranked by F1, download as CSV
+5. **Dashboard** — view all datasets and past experiments, re-run on existing data, delete
+6. **Profile** — usage stats (datasets uploaded, experiments run)
 
 ---
 
@@ -124,8 +126,17 @@ docker compose down                    # stop everything
 
 ---
 
+## Auth
+
+Sign in with a magic link (passwordless). Enter your email → click the link → you're in. Each user's datasets and experiments are fully isolated.
+
+---
+
 ## Roadmap
 
 - **V1.1** S3 storage · EC2 deployment · CI/CD · seed data ✅
-- **V1.2** Firebase auth · per-user isolation
-- **V2**   Conversational agent (LangGraph + GPT-4o) with chain-of-thought planning
+- **V1.2** Firebase auth · per-user isolation ✅
+- **V1.3** Dashboard · CSV download · profile · delete hygiene ✅
+- **V2.0** Bring Your Own Compute — Colab export + local CLI
+- **V3.0** Preprocessing options · more models · BM25 IR baselines
+- **V4.0** Conversational config · results visualization · UX polish
