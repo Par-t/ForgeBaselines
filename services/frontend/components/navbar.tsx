@@ -26,8 +26,14 @@ export function Navbar() {
             <div className="h-4 w-20 bg-gray-700 rounded animate-pulse" />
           ) : user ? (
             <>
+              <Link href="/dashboard" className="text-gray-400 hover:text-white transition-colors">
+                Dashboard
+              </Link>
               <Link href="/upload" className="text-gray-400 hover:text-white transition-colors">
                 Upload
+              </Link>
+              <Link href="/profile" className="text-gray-400 hover:text-white transition-colors">
+                Profile
               </Link>
               <div className="flex items-center gap-4">
                 <span className="text-gray-500 text-xs">{user.email}</span>

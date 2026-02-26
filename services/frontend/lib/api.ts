@@ -87,6 +87,35 @@ export interface ExperimentResultsResponse {
   leaderboard: ModelResult[];
 }
 
+export interface DatasetListItem {
+  dataset_id: string;
+  filename: string;
+  rows: number;
+  cols: number;
+  created_at: string;
+  experiment_count: number;
+}
+
+export interface DatasetListResponse {
+  datasets: DatasetListItem[];
+}
+
+export interface ExperimentListItem {
+  experiment_id: string;
+  dataset_id: string;
+  status: string;
+  run_count: number;
+  created_at: string;
+}
+
+export interface ExperimentListResponse {
+  experiments: ExperimentListItem[];
+}
+
+export interface DeleteResponse {
+  message: string;
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers);
 
@@ -141,4 +170,33 @@ export const api = {
 
   getResults: (experimentId: string): Promise<ExperimentResultsResponse> =>
     request(`/experiments/${experimentId}/results`),
+
+  listDatasets: (): Promise<DatasetListResponse> =>
+    request('/datasets'),
+
+  listExperiments: (): Promise<ExperimentListResponse> =>
+    request('/experiments'),
+
+  deleteDataset: (datasetId: string): Promise<DeleteResponse> =>
+    request(`/datasets/${datasetId}`, { method: 'DELETE' }),
+
+  deleteExperiment: (experimentId: string): Promise<DeleteResponse> =>
+    request(`/experiments/${experimentId}`, { method: 'DELETE' }),
+
+  downloadResults: async (experimentId: string): Promise<void> => {
+    const headers = new Headers();
+    if (tokenGetter) {
+      const token = await tokenGetter();
+      if (token) headers.set('Authorization', `Bearer ${token}`);
+    }
+    const res = await fetch(`${API_BASE}/experiments/${experimentId}/results/download`, { headers });
+    if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `results_${experimentId.slice(0, 8)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
 };
