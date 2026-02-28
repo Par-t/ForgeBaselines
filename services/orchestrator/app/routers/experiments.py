@@ -92,7 +92,8 @@ async def run_experiment(
     try:
         X_train, X_test, y_train, y_test, preprocessor, label_classes = preprocess_dataset(
             df, request.target_column, request.test_size,
-            column_config=request.column_config
+            column_config=request.column_config,
+            preprocessing_config=request.preprocessing_config,
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Preprocessing failed: {str(e)}")
@@ -120,7 +121,11 @@ async def run_experiment(
                     "model_names": request.model_names,
                     "label_classes": label_classes,
                     "user_id": user_id,
-                    "experiment_id": experiment_id
+                    "experiment_id": experiment_id,
+                    "use_class_weight": (
+                        request.preprocessing_config is not None
+                        and request.preprocessing_config.class_balancing == "class_weight"
+                    ),
                 }
             )
             response.raise_for_status()
@@ -133,7 +138,8 @@ async def run_experiment(
         status="completed",
         estimated_runtime=runtime_estimate["overall_estimate"],
         models=request.model_names,
-        column_config_used=request.column_config
+        column_config_used=request.column_config,
+        preprocessing_config_used=request.preprocessing_config,
     )
 
 
