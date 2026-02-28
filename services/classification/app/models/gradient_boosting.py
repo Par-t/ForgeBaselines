@@ -3,8 +3,8 @@
 from sklearn.ensemble import GradientBoostingClassifier
 
 
-def get_model(params=None):
-    """Get gradient boosting model with default params."""
+def get_model(params=None, use_class_weight: bool = False):
+    """Get gradient boosting model with default params. use_class_weight is ignored (not supported)."""
     default_params = {
         "n_estimators": 100,
         "learning_rate": 0.1,

@@ -10,13 +10,13 @@ MODEL_REGISTRY = {
 }
 
 
-def get_model(model_name: str, params=None):
+def get_model(model_name: str, params=None, use_class_weight: bool = False):
     """Get a model by name with optional params."""
     if model_name not in MODEL_REGISTRY:
         raise ValueError(f"Unknown model: {model_name}. Available: {list(MODEL_REGISTRY.keys())}")
 
     model_module = MODEL_REGISTRY[model_name]
-    return model_module.get_model(params)
+    return model_module.get_model(params, use_class_weight=use_class_weight)
 
 
 def get_available_models():

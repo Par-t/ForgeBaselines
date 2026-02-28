@@ -17,6 +17,7 @@ class TrainRequest(BaseModel):
     label_classes: List[str] = Field(..., description="Class names in label-encoded order, e.g. ['cat','dog']")
     user_id: str = Field(..., description="User ID for experiment tracking")
     experiment_id: str = Field(..., description="Unique experiment identifier")
+    use_class_weight: bool = Field(default=False, description="Pass class_weight='balanced' to models that support it")
 
 
 class ModelResult(BaseModel):

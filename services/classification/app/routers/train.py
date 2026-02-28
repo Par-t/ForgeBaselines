@@ -30,7 +30,8 @@ async def train_models(request: TrainRequest):
         y_test=y_test,
         model_names=request.model_names,
         experiment_id=request.experiment_id,
-        label_classes=request.label_classes
+        label_classes=request.label_classes,
+        use_class_weight=request.use_class_weight,
     )
 
     # Convert to response format

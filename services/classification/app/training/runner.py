@@ -17,7 +17,8 @@ def run_training(
     y_test: np.ndarray,
     model_names: List[str],
     experiment_id: str,
-    label_classes: List[str] = None
+    label_classes: List[str] = None,
+    use_class_weight: bool = False,
 ) -> List[Dict[str, Any]]:
     """Train multiple models and return results with MLflow logging.
 
@@ -38,11 +39,12 @@ def run_training(
     for model_name in model_names:
         # Start MLflow run
         with mlflow.start_run(run_name=model_name):
-            # Get model
-            model = get_model(model_name)
+            # Get model (pass class_weight if requested)
+            model = get_model(model_name, use_class_weight=use_class_weight)
 
             # Log model parameters
             mlflow.log_param("model_name", model_name)
+            mlflow.log_param("use_class_weight", use_class_weight)
             mlflow.log_param("n_train_samples", len(X_train))
             mlflow.log_param("n_test_samples", len(X_test))
             mlflow.log_param("n_features", X_train.shape[1])
