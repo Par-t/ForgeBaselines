@@ -53,12 +53,18 @@ export interface RuntimeEstimateResponse {
   complexity_factors: Record<string, unknown>;
 }
 
+export interface PreprocessingConfig {
+  scaling: 'standard' | 'minmax' | 'none';
+  class_balancing: 'none' | 'class_weight' | 'smote';
+}
+
 export interface ExperimentRunRequest {
   dataset_id: string;
   target_column: string;
   model_names: string[];
   test_size: number;
   column_config?: ColumnConfig;
+  preprocessing_config?: PreprocessingConfig;
 }
 
 export interface ExperimentRunResponse {

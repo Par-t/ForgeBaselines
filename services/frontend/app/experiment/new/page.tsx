@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { api, SuggestColumnsResponse } from '@/lib/api'
+import { api, SuggestColumnsResponse, PreprocessingConfig } from '@/lib/api'
 import { ProtectedRoute } from '@/components/protected-route'
 
 const MODELS = [
@@ -38,6 +38,11 @@ function NewExperimentForm() {
   const [isRunning, setIsRunning] = useState(false)
   const [profileLoading, setProfileLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [showPreprocessing, setShowPreprocessing] = useState(false)
+  const [preprocessing, setPreprocessing] = useState<PreprocessingConfig>({
+    scaling: 'standard',
+    class_balancing: 'none',
+  })
 
   // Load column names from profile
   useEffect(() => {
@@ -91,10 +96,10 @@ function NewExperimentForm() {
         target_column: targetColumn,
         model_names: selectedModels,
         test_size: testSize,
-        // Pass suggestions back with source="user" so V2 agent flow is honoured
         column_config: suggestions?.column_config
           ? { ...suggestions.column_config, source: 'user' }
           : undefined,
+        preprocessing_config: preprocessing,
       })
       router.push(`/experiment/${result.experiment_id}/results`)
     } catch (e: unknown) {
@@ -223,6 +228,85 @@ function NewExperimentForm() {
           <span>10%</span>
           <span>50%</span>
         </div>
+      </section>
+
+      {/* Advanced preprocessing */}
+      <section className="mb-7">
+        <button
+          onClick={() => setShowPreprocessing(v => !v)}
+          className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors w-full text-left"
+        >
+          <span className="text-gray-500">⚙</span>
+          <span>Advanced preprocessing</span>
+          {(preprocessing.scaling !== 'standard' || preprocessing.class_balancing !== 'none') && (
+            <span className="text-xs bg-indigo-950 text-indigo-400 border border-indigo-900 px-1.5 py-0.5 rounded ml-1">
+              custom
+            </span>
+          )}
+          <span className="ml-auto text-xs text-gray-600">{showPreprocessing ? '▲' : '▼'}</span>
+        </button>
+
+        {showPreprocessing && (
+          <div className="mt-3 bg-gray-900 border border-gray-700 rounded-lg p-4 space-y-5">
+            {/* Scaling */}
+            <div>
+              <div className="text-xs font-medium text-gray-400 mb-2">Scaling</div>
+              <div className="flex gap-2 flex-wrap">
+                {([
+                  { value: 'standard', label: 'Standard' },
+                  { value: 'minmax', label: 'MinMax' },
+                  { value: 'none', label: 'None' },
+                ] as const).map(({ value, label }) => (
+                  <button
+                    key={value}
+                    onClick={() => setPreprocessing(p => ({ ...p, scaling: value }))}
+                    className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                      preprocessing.scaling === value
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-gray-800 text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-600 mt-1.5">
+                {preprocessing.scaling === 'standard' && 'Zero mean, unit variance — best for most models'}
+                {preprocessing.scaling === 'minmax' && 'Scales to [0, 1] — useful for distance-based models'}
+                {preprocessing.scaling === 'none' && 'No scaling — only use for tree-based models'}
+              </p>
+            </div>
+
+            {/* Class balancing */}
+            <div>
+              <div className="text-xs font-medium text-gray-400 mb-2">Class Balancing</div>
+              <div className="flex gap-2 flex-wrap">
+                {([
+                  { value: 'none', label: 'None' },
+                  { value: 'class_weight', label: 'Class Weight' },
+                  { value: 'smote', label: 'SMOTE' },
+                ] as const).map(({ value, label }) => (
+                  <button
+                    key={value}
+                    onClick={() => setPreprocessing(p => ({ ...p, class_balancing: value }))}
+                    className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                      preprocessing.class_balancing === value
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-gray-800 text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-600 mt-1.5">
+                {preprocessing.class_balancing === 'none' && 'No balancing — use when classes are roughly equal'}
+                {preprocessing.class_balancing === 'class_weight' && 'Penalises majority class in loss — fast, no data change (LR + RF only)'}
+                {preprocessing.class_balancing === 'smote' && 'Synthetic minority oversampling — generates new samples from minority class'}
+              </p>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Runtime estimate */}
