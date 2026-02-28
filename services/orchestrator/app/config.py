@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     # Firebase
     firebase_service_account_json: str = "{}"
 
+    # Frontend (set to Vercel URL in production)
+    frontend_url: str = "http://localhost:3000"
+
     # Environment
     env: str = "development"
 

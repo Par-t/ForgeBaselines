@@ -10,27 +10,27 @@ classification tasks. Upload a CSV, configure your experiment, get a ranked lead
 ## Architecture
 
 ```
-┌──────────────┐       ┌──────────────────┐       ┌──────────────────┐
-│   Frontend   │       │   Orchestrator   │       │  Classification  │
-│  (Next.js)   │──────▶│   (FastAPI)      │──────▶│   (FastAPI)      │
-│  port 3000   │       │   port 8000      │       │   port 8001      │
-└──────────────┘       └───────┬──────────┘       └────────┬─────────┘
-                               │                           │
-                               │       ┌───────────┐       │
-                               └──────▶│  MLflow   │◀──────┘
-                                       │  port 5001│
-                                       └───────────┘
+                        ┌─────────────────────────────────────────┐
+  User ───────────────▶ │  Frontend (Next.js) — Vercel (free)     │
+                        └─────────────────┬───────────────────────┘
+                                          │ API calls /api/*
+                                          ▼
+                        ┌─────────────────────────────────────────┐
+                        │  EC2 — nginx (port 80)                  │
+                        │    └─▶ Orchestrator (FastAPI, 8000)  ──▶│──▶ Classification (FastAPI, 8001)
+                        │                    └─▶ MLflow (5001)    │
+                        └─────────────────────────────────────────┘
 ```
 
-| Service        | Port | Role                                                   |
-|----------------|------|--------------------------------------------------------|
-| orchestrator   | 8000 | Main API — upload, profiling, experiment orchestration |
-| classification | 8001 | Internal — model training + MLflow logging             |
-| mlflow         | 5001 | Experiment tracking UI + REST API                      |
-| frontend       | 3000 | Next.js UI — upload → configure → results              |
+| Service        | Hosting | Role                                                   |
+|----------------|---------|--------------------------------------------------------|
+| frontend       | Vercel  | Next.js UI — upload → configure → results              |
+| orchestrator   | EC2     | Main API — upload, profiling, experiment orchestration |
+| classification | EC2     | Internal — model training + MLflow logging             |
+| mlflow         | EC2     | Experiment tracking UI + REST API                      |
 
-Frontend calls orchestrator only. Orchestrator calls classification and MLflow
-internally. Classification never receives direct external traffic.
+Frontend calls orchestrator only (via `/api/*` through nginx). Orchestrator calls
+classification and MLflow internally. Classification never receives direct external traffic.
 
 ---
 
@@ -107,9 +107,10 @@ docker compose exec classification pytest tests/ -v --tb=short
 Every push to `main` triggers GitHub Actions:
 
 1. **CI** — runs pytest for both backend services + `npm run build` for frontend (3 parallel jobs)
-2. **Deploy** — on CI success, SSHes into EC2 and rebuilds with `docker compose`
+2. **Deploy (backend)** — on CI success, SSHes into EC2 and rebuilds orchestrator, classification, and mlflow with `docker compose`
+3. **Deploy (frontend)** — Vercel auto-deploys on push to `main` (connected via GitHub integration)
 
-Live at: [forgebaselines.mooo.com](http://forgebaselines.mooo.com)
+Backend API: `http://18.118.86.95/api`
 
 ---
 
@@ -137,6 +138,5 @@ Sign in with a magic link (passwordless). Enter your email → click the link �
 - **V1.1** S3 storage · EC2 deployment · CI/CD · seed data ✅
 - **V1.2** Firebase auth · per-user isolation ✅
 - **V1.3** Dashboard · CSV download · profile · delete hygiene ✅
-- **V2.0** Bring Your Own Compute — Colab export + local CLI
-- **V3.0** Preprocessing options · more models · BM25 IR baselines
-- **V4.0** Conversational config · results visualization · UX polish
+- **V2.0** Capabilities — preprocessing options · more models · BM25 IR baselines
+- **V3.0** Polish — conversational config · results visualization · UX
