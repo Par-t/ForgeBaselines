@@ -59,6 +59,22 @@ class SuggestColumnsResponse(BaseModel):
     )
 
 
+class PreprocessingConfig(BaseModel):
+    """User-selectable preprocessing options for an experiment."""
+
+    scaling: Literal["standard", "minmax", "none"] = Field(
+        default="standard",
+        description="Feature scaling strategy. 'standard'=StandardScaler, 'minmax'=MinMaxScaler, 'none'=no scaling.",
+    )
+    class_balancing: Literal["none", "class_weight", "smote"] = Field(
+        default="none",
+        description=(
+            "'none'=no balancing, 'class_weight'=pass class_weight='balanced' to models that support it, "
+            "'smote'=oversample minority class on training set after encoding."
+        ),
+    )
+
+
 class ExperimentRunRequest(BaseModel):
     """Request to run an experiment."""
 
@@ -74,6 +90,10 @@ class ExperimentRunRequest(BaseModel):
             "and feature_columns (if non-empty) restrict the feature set."
         )
     )
+    preprocessing_config: Optional[PreprocessingConfig] = Field(
+        default=None,
+        description="Optional preprocessing options. When omitted, defaults (StandardScaler, no balancing) are used.",
+    )
 
 
 class ExperimentRunResponse(BaseModel):
@@ -87,4 +107,8 @@ class ExperimentRunResponse(BaseModel):
     column_config_used: Optional[ColumnConfig] = Field(
         default=None,
         description="The ColumnConfig that was applied during preprocessing. Null if not provided."
+    )
+    preprocessing_config_used: Optional[PreprocessingConfig] = Field(
+        default=None,
+        description="The PreprocessingConfig that was applied. Null if defaults were used.",
     )

@@ -11,3 +11,4 @@ httpx==0.26.0
 pytest==7.4.4
 pytest-asyncio==0.23.3
 firebase-admin==6.4.0
+imbalanced-learn==0.12.0

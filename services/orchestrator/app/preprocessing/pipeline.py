@@ -3,30 +3,32 @@
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, OneHotEncoder, LabelEncoder
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, OneHotEncoder, LabelEncoder
 from sklearn.impute import SimpleImputer
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from typing import Tuple, Any, List, Optional
 
-from app.schemas.plan import ColumnConfig
+from app.schemas.plan import ColumnConfig, PreprocessingConfig
 
 
 def preprocess_dataset(
     df: pd.DataFrame,
     target_column: str,
     test_size: float = 0.2,
-    column_config: Optional[ColumnConfig] = None
+    column_config: Optional[ColumnConfig] = None,
+    preprocessing_config: Optional[PreprocessingConfig] = None,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, Any, List[str]]:
-    """Preprocess dataset: impute, encode, scale, split.
+    """Preprocess dataset: impute, encode, scale, split, optionally balance.
 
     Returns X_train, X_test, y_train, y_test (as integers), preprocessor, label_classes.
     label_classes maps integer index → original class name (e.g. ["Iris-setosa", ...]).
 
-    column_config: optional ColumnConfig specifying columns to drop (ignore_columns)
-    and/or an explicit feature allowlist (feature_columns). When None, all non-target
-    columns are used as features (V1 default behaviour).
+    column_config: optional ColumnConfig specifying columns to drop / feature allowlist.
+    preprocessing_config: optional scaling + class balancing choices.
     """
+    cfg = preprocessing_config or PreprocessingConfig()
+
     working_df = df.copy()
     if column_config is not None:
         cols_to_drop = [c for c in column_config.ignore_columns if c in working_df.columns]
@@ -42,17 +44,21 @@ def preprocess_dataset(
     # Encode target labels → integers, preserve class mapping
     le = LabelEncoder()
     y_encoded = le.fit_transform(y)
-    label_classes = le.classes_.tolist()  # e.g. ["Iris-setosa", "Iris-versicolor", "Iris-virginica"]
+    label_classes = le.classes_.tolist()
 
     # Identify column types
     numeric_cols = X.select_dtypes(include=['int64', 'float64']).columns.tolist()
     categorical_cols = X.select_dtypes(include=['object', 'category']).columns.tolist()
 
-    # Build transformers
-    num_pipeline = Pipeline([
-        ('impute', SimpleImputer(strategy='median')),
-        ('scale', StandardScaler())
-    ])
+    # Build numeric pipeline based on scaling choice
+    if cfg.scaling == "standard":
+        num_steps = [('impute', SimpleImputer(strategy='median')), ('scale', StandardScaler())]
+    elif cfg.scaling == "minmax":
+        num_steps = [('impute', SimpleImputer(strategy='median')), ('scale', MinMaxScaler())]
+    else:  # "none"
+        num_steps = [('impute', SimpleImputer(strategy='median'))]
+
+    num_pipeline = Pipeline(num_steps)
 
     cat_pipeline = Pipeline([
         ('impute', SimpleImputer(strategy='most_frequent')),
@@ -72,5 +78,11 @@ def preprocess_dataset(
     # Transform features
     X_train_transformed = preprocessor.fit_transform(X_train)
     X_test_transformed = preprocessor.transform(X_test)
+
+    # Apply SMOTE on training set after encoding (test set is never touched)
+    if cfg.class_balancing == "smote":
+        from imblearn.over_sampling import SMOTE
+        smote = SMOTE(random_state=42)
+        X_train_transformed, y_train = smote.fit_resample(X_train_transformed, y_train)
 
     return X_train_transformed, X_test_transformed, y_train, y_test, preprocessor, label_classes
