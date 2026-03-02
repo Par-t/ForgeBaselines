@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { api, SuggestColumnsResponse, PreprocessingConfig } from '@/lib/api'
+import { api, SuggestColumnsResponse, PreprocessingConfig, TextPreprocessingConfig } from '@/lib/api'
 import { ProtectedRoute } from '@/components/protected-route'
 
 const MODELS = [
@@ -46,6 +46,14 @@ function NewExperimentForm() {
     scaling: 'standard',
     class_balancing: 'none',
   })
+  const [textPreprocessing, setTextPreprocessing] = useState<TextPreprocessingConfig>({
+    lowercase: true,
+    remove_punctuation: true,
+    remove_stopwords: false,
+    stemming: false,
+    lemmatization: false,
+  })
+  const [enableTextPreprocessing, setEnableTextPreprocessing] = useState(false)
 
   // Load column names from profile
   useEffect(() => {
@@ -102,7 +110,10 @@ function NewExperimentForm() {
         column_config: suggestions?.column_config
           ? { ...suggestions.column_config, source: 'user' }
           : undefined,
-        preprocessing_config: preprocessing,
+        preprocessing_config: {
+          ...preprocessing,
+          text: enableTextPreprocessing ? textPreprocessing : undefined,
+        },
       })
       router.push(`/experiment/${result.experiment_id}/results`)
     } catch (e: unknown) {
@@ -241,7 +252,7 @@ function NewExperimentForm() {
         >
           <span className="text-gray-500">⚙</span>
           <span>Advanced preprocessing</span>
-          {(preprocessing.scaling !== 'standard' || preprocessing.class_balancing !== 'none') && (
+          {(preprocessing.scaling !== 'standard' || preprocessing.class_balancing !== 'none' || enableTextPreprocessing) && (
             <span className="text-xs bg-indigo-950 text-indigo-400 border border-indigo-900 px-1.5 py-0.5 rounded ml-1">
               custom
             </span>
@@ -307,6 +318,90 @@ function NewExperimentForm() {
                 {preprocessing.class_balancing === 'class_weight' && 'Penalises majority class in loss — fast, no data change (LR + RF only)'}
                 {preprocessing.class_balancing === 'smote' && 'Synthetic minority oversampling — generates new samples from minority class'}
               </p>
+            </div>
+
+            {/* Text preprocessing */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-xs font-medium text-gray-400">Text Preprocessing</div>
+                <button
+                  onClick={() => setEnableTextPreprocessing(v => !v)}
+                  className={`text-xs px-2 py-0.5 rounded transition-colors ${
+                    enableTextPreprocessing
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-gray-800 text-gray-400 hover:text-white'
+                  }`}
+                >
+                  {enableTextPreprocessing ? 'On' : 'Off'}
+                </button>
+              </div>
+              {enableTextPreprocessing && (
+                <div className="space-y-3">
+                  {/* Toggles */}
+                  <div className="flex gap-2 flex-wrap">
+                    {([
+                      { key: 'lowercase', label: 'Lowercase' },
+                      { key: 'remove_punctuation', label: 'Remove Punctuation' },
+                      { key: 'remove_stopwords', label: 'Stop Words' },
+                    ] as const).map(({ key, label }) => (
+                      <button
+                        key={key}
+                        onClick={() => setTextPreprocessing(p => ({ ...p, [key]: !p[key] }))}
+                        className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                          textPreprocessing[key]
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-gray-800 text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {/* Stemming / Lemmatization (mutually exclusive) */}
+                  <div>
+                    <div className="text-xs text-gray-600 mb-1.5">Word normalisation</div>
+                    <div className="flex gap-2">
+                      {([
+                        { value: 'none', label: 'None' },
+                        { value: 'stemming', label: 'Stemming' },
+                        { value: 'lemmatization', label: 'Lemmatization' },
+                      ] as const).map(({ value, label }) => {
+                        const active =
+                          value === 'none'
+                            ? !textPreprocessing.stemming && !textPreprocessing.lemmatization
+                            : textPreprocessing[value as 'stemming' | 'lemmatization']
+                        return (
+                          <button
+                            key={value}
+                            onClick={() =>
+                              setTextPreprocessing(p => ({
+                                ...p,
+                                stemming: value === 'stemming',
+                                lemmatization: value === 'lemmatization',
+                              }))
+                            }
+                            className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                              active
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-gray-800 text-gray-400 hover:text-white'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <p className="text-xs text-gray-600 mt-1.5">
+                      {!textPreprocessing.stemming && !textPreprocessing.lemmatization && 'No word normalisation'}
+                      {textPreprocessing.stemming && 'Porter stemmer — fast, aggressive reduction (run → run, running → run)'}
+                      {textPreprocessing.lemmatization && 'WordNet lemmatizer — dictionary-based, slower but more accurate'}
+                    </p>
+                  </div>
+                </div>
+              )}
+              {!enableTextPreprocessing && (
+                <p className="text-xs text-gray-600">Applied to detected text columns only. Enable to configure.</p>
+              )}
             </div>
           </div>
         )}

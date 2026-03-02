@@ -53,9 +53,18 @@ export interface RuntimeEstimateResponse {
   complexity_factors: Record<string, unknown>;
 }
 
+export interface TextPreprocessingConfig {
+  lowercase: boolean;
+  remove_punctuation: boolean;
+  remove_stopwords: boolean;
+  stemming: boolean;
+  lemmatization: boolean;
+}
+
 export interface PreprocessingConfig {
   scaling: 'standard' | 'minmax' | 'none';
   class_balancing: 'none' | 'class_weight' | 'smote';
+  text?: TextPreprocessingConfig;
 }
 
 export interface ExperimentRunRequest {

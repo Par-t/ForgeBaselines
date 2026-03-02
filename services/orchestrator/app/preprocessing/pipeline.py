@@ -10,6 +10,7 @@ from sklearn.pipeline import Pipeline
 from typing import Tuple, Any, List, Optional
 
 from app.schemas.plan import ColumnConfig, PreprocessingConfig
+from app.preprocessing.text import preprocess_text_column, is_text_column
 
 
 def preprocess_dataset(
@@ -40,6 +41,13 @@ def preprocess_dataset(
 
     X = working_df.drop(columns=[target_column])
     y = working_df[target_column]
+
+    # Apply NLP text preprocessing to detected text columns
+    if cfg.text is not None:
+        for col in X.columns:
+            if is_text_column(X[col]):
+                X = X.copy()
+                X[col] = preprocess_text_column(X[col], cfg.text)
 
     # Encode target labels → integers, preserve class mapping
     le = LabelEncoder()

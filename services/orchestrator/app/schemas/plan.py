@@ -59,6 +59,22 @@ class SuggestColumnsResponse(BaseModel):
     )
 
 
+class TextPreprocessingConfig(BaseModel):
+    """NLP text preprocessing options applied to detected text columns."""
+
+    lowercase: bool = Field(default=True, description="Convert text to lowercase.")
+    remove_punctuation: bool = Field(default=True, description="Strip punctuation characters.")
+    remove_stopwords: bool = Field(default=False, description="Remove common English stop words.")
+    stemming: bool = Field(default=False, description="Apply Porter stemmer. Mutually exclusive with lemmatization.")
+    lemmatization: bool = Field(default=False, description="Apply WordNet lemmatizer. Mutually exclusive with stemming.")
+
+    @model_validator(mode="after")
+    def check_stem_lemma_exclusive(self) -> "TextPreprocessingConfig":
+        if self.stemming and self.lemmatization:
+            raise ValueError("stemming and lemmatization are mutually exclusive — choose one or neither.")
+        return self
+
+
 class PreprocessingConfig(BaseModel):
     """User-selectable preprocessing options for an experiment."""
 
@@ -72,6 +88,10 @@ class PreprocessingConfig(BaseModel):
             "'none'=no balancing, 'class_weight'=pass class_weight='balanced' to models that support it, "
             "'smote'=oversample minority class on training set after encoding."
         ),
+    )
+    text: Optional[TextPreprocessingConfig] = Field(
+        default=None,
+        description="NLP preprocessing for detected text columns. When None, text columns are left as-is.",
     )
 
 
