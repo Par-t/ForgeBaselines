@@ -1,12 +1,15 @@
 """Model registry for managing available models."""
 
-from app.models import logistic, random_forest, gradient_boosting
+from app.models import logistic, random_forest, gradient_boosting, xgboost_model, svm, knn
 
 
 MODEL_REGISTRY = {
     "logistic_regression": logistic,
     "random_forest": random_forest,
     "gradient_boosting": gradient_boosting,
+    "xgboost": xgboost_model,
+    "svm": svm,
+    "knn": knn,
 }
 
 

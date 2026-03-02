@@ -9,6 +9,9 @@ const MODELS = [
   { id: 'logistic_regression', label: 'Logistic Regression' },
   { id: 'random_forest', label: 'Random Forest' },
   { id: 'gradient_boosting', label: 'Gradient Boosting' },
+  { id: 'xgboost', label: 'XGBoost' },
+  { id: 'svm', label: 'SVM' },
+  { id: 'knn', label: 'KNN' },
 ]
 
 function Spinner({ size = 5 }: { size?: number }) {
