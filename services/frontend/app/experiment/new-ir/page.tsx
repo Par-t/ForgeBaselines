@@ -1,0 +1,241 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import ProtectedRoute from '@/components/protected-route';
+import { api, DatasetListItem, IRExperimentRunRequest, TextPreprocessingConfig } from '@/lib/api';
+
+const DEFAULT_TEXT_PREPROCESSING: TextPreprocessingConfig = {
+  lowercase: true,
+  remove_punctuation: true,
+  remove_stopwords: false,
+  stemming: false,
+  lemmatization: false,
+};
+
+export default function NewIRExperimentPage() {
+  const router = useRouter();
+
+  const [datasets, setDatasets] = useState<DatasetListItem[]>([]);
+  const [corpusDatasetId, setCorpusDatasetId] = useState('');
+  const [queriesDatasetId, setQueriesDatasetId] = useState('');
+  const [textColumn, setTextColumn] = useState('text');
+  const [kValues, setKValues] = useState<number[]>([10, 100]);
+  const [enableTextPreprocessing, setEnableTextPreprocessing] = useState(false);
+  const [textPreprocessing, setTextPreprocessing] = useState<TextPreprocessingConfig>(DEFAULT_TEXT_PREPROCESSING);
+  const [loading, setLoading] = useState(false);
+  const [loadingDatasets, setLoadingDatasets] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.listDatasets()
+      .then(res => setDatasets(res.datasets))
+      .catch(() => setError('Failed to load datasets'))
+      .finally(() => setLoadingDatasets(false));
+  }, []);
+
+  function toggleK(k: number) {
+    setKValues(prev =>
+      prev.includes(k) ? prev.filter(v => v !== k) : [...prev, k].sort((a, b) => a - b)
+    );
+  }
+
+  function setMorphology(mode: 'none' | 'stemming' | 'lemmatization') {
+    setTextPreprocessing(prev => ({
+      ...prev,
+      stemming: mode === 'stemming',
+      lemmatization: mode === 'lemmatization',
+    }));
+  }
+
+  async function handleRun() {
+    if (!corpusDatasetId || !queriesDatasetId || !textColumn) {
+      setError('Select corpus dataset, queries dataset, and text column.');
+      return;
+    }
+    if (kValues.length === 0) {
+      setError('Select at least one k value.');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    const req: IRExperimentRunRequest = {
+      corpus_dataset_id: corpusDatasetId,
+      queries_dataset_id: queriesDatasetId,
+      text_column: textColumn,
+      k_values: kValues,
+      preprocessing_config: enableTextPreprocessing
+        ? { scaling: 'none', class_balancing: 'none', text: textPreprocessing }
+        : undefined,
+    };
+
+    try {
+      const result = await api.runIRExperiment(req);
+      router.push(`/experiment/ir/${result.experiment_id}/results`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start experiment');
+      setLoading(false);
+    }
+  }
+
+  return (
+    <ProtectedRoute>
+      <div className="min-h-screen bg-gray-950 text-gray-100 p-8">
+        <div className="max-w-2xl mx-auto">
+          <h1 className="text-2xl font-bold mb-1">New IR Experiment</h1>
+          <p className="text-gray-400 text-sm mb-8">BM25 retrieval — upload corpus + queries CSVs first via the Upload page.</p>
+
+          {error && (
+            <div className="mb-6 p-4 bg-red-950/50 border border-red-800 rounded-lg text-red-300 text-sm">
+              {error}
+            </div>
+          )}
+
+          {/* Dataset Selection */}
+          <div className="bg-gray-900 rounded-xl p-6 mb-6 space-y-4">
+            <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Datasets</h2>
+
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">Corpus dataset <span className="text-gray-600 text-xs">(doc_id, text columns)</span></label>
+              {loadingDatasets ? (
+                <div className="h-10 bg-gray-800 rounded animate-pulse" />
+              ) : (
+                <select
+                  value={corpusDatasetId}
+                  onChange={e => setCorpusDatasetId(e.target.value)}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="">Select corpus dataset...</option>
+                  {datasets.map(d => (
+                    <option key={d.dataset_id} value={d.dataset_id}>
+                      {d.filename} ({d.rows.toLocaleString()} rows)
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">Queries dataset <span className="text-gray-600 text-xs">(query_id, query, doc_id, relevance columns)</span></label>
+              {loadingDatasets ? (
+                <div className="h-10 bg-gray-800 rounded animate-pulse" />
+              ) : (
+                <select
+                  value={queriesDatasetId}
+                  onChange={e => setQueriesDatasetId(e.target.value)}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="">Select queries dataset...</option>
+                  {datasets.map(d => (
+                    <option key={d.dataset_id} value={d.dataset_id}>
+                      {d.filename} ({d.rows.toLocaleString()} rows)
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">Text column in corpus</label>
+              <input
+                type="text"
+                value={textColumn}
+                onChange={e => setTextColumn(e.target.value)}
+                placeholder="text"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+          </div>
+
+          {/* k values */}
+          <div className="bg-gray-900 rounded-xl p-6 mb-6">
+            <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">Retrieval cutoffs (k)</h2>
+            <div className="flex gap-3">
+              {[10, 100].map(k => (
+                <button
+                  key={k}
+                  onClick={() => toggleK(k)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                    kValues.includes(k)
+                      ? 'bg-indigo-600 border-indigo-500 text-white'
+                      : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'
+                  }`}
+                >
+                  k={k}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Text Preprocessing */}
+          <div className="bg-gray-900 rounded-xl p-6 mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Text preprocessing</h2>
+              <button
+                onClick={() => setEnableTextPreprocessing(p => !p)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  enableTextPreprocessing ? 'bg-indigo-600' : 'bg-gray-700'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  enableTextPreprocessing ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
+            </div>
+
+            {enableTextPreprocessing && (
+              <div className="space-y-3">
+                {([
+                  ['lowercase', 'Lowercase'],
+                  ['remove_punctuation', 'Remove punctuation'],
+                  ['remove_stopwords', 'Remove stopwords'],
+                ] as [keyof TextPreprocessingConfig, string][]).map(([key, label]) => (
+                  <label key={key} className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={textPreprocessing[key] as boolean}
+                      onChange={e => setTextPreprocessing(prev => ({ ...prev, [key]: e.target.checked }))}
+                      className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-indigo-600"
+                    />
+                    <span className="text-sm text-gray-300">{label}</span>
+                  </label>
+                ))}
+
+                <div className="mt-4">
+                  <p className="text-xs text-gray-500 mb-2">Morphological analysis</p>
+                  <div className="flex gap-2">
+                    {(['none', 'stemming', 'lemmatization'] as const).map(mode => (
+                      <button
+                        key={mode}
+                        onClick={() => setMorphology(mode)}
+                        className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors capitalize ${
+                          (mode === 'none' && !textPreprocessing.stemming && !textPreprocessing.lemmatization) ||
+                          (mode === 'stemming' && textPreprocessing.stemming) ||
+                          (mode === 'lemmatization' && textPreprocessing.lemmatization)
+                            ? 'bg-indigo-600 border-indigo-500 text-white'
+                            : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'
+                        }`}
+                      >
+                        {mode}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={handleRun}
+            disabled={loading || loadingDatasets}
+            className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-semibold transition-colors"
+          >
+            {loading ? 'Running experiment...' : 'Run IR Experiment'}
+          </button>
+        </div>
+      </div>
+    </ProtectedRoute>
+  );
+}

@@ -20,6 +20,7 @@ class Settings(BaseSettings):
 
     # Services
     classification_service_url: str = "http://localhost:8001"
+    ir_service_url: str = "http://localhost:8002"
 
     # AWS
     aws_default_region: str = "us-east-2"

@@ -24,6 +24,7 @@ services:
       - S3_BUCKET=${S3_BUCKET:-forgebaselines-artifacts}
       - MLFLOW_TRACKING_URI=http://mlflow:5000
       - CLASSIFICATION_SERVICE_URL=http://classification:8001
+      - IR_SERVICE_URL=http://ir:8002
       - ENV=production
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
@@ -36,6 +37,7 @@ services:
     depends_on:
       - mlflow
       - classification
+      - ir
     restart: always
 
   classification:
@@ -43,6 +45,22 @@ services:
       context: ./services/classification
       dockerfile: Dockerfile
     container_name: forgebaselines-classification
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - ENV=production
+    volumes:
+      - app-data:/app/data
+    networks:
+      - forgebaselines
+    depends_on:
+      - mlflow
+    restart: always
+
+  ir:
+    build:
+      context: ./services/ir
+      dockerfile: Dockerfile
+    container_name: forgebaselines-ir
     environment:
       - MLFLOW_TRACKING_URI=http://mlflow:5000
       - ENV=production

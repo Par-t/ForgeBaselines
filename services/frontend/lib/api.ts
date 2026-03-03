@@ -131,6 +131,50 @@ export interface DeleteResponse {
   message: string;
 }
 
+export interface IRExperimentRunRequest {
+  corpus_dataset_id: string;
+  queries_dataset_id: string;
+  text_column: string;
+  k_values: number[];
+  preprocessing_config?: PreprocessingConfig;
+}
+
+export interface IRMetrics {
+  map: number;
+  ndcg_10: number;
+  recall_10: number;
+  recall_100: number;
+  mrr: number;
+}
+
+export interface IRExperimentRunResponse {
+  experiment_id: string;
+  corpus_dataset_id: string;
+  queries_dataset_id: string;
+  status: string;
+}
+
+export interface IRResultsResponse {
+  experiment_id: string;
+  user_id: string;
+  status: string;
+  metrics: IRMetrics;
+  n_docs: number;
+  n_queries: number;
+}
+
+export interface IRExperimentListItem {
+  experiment_id: string;
+  corpus_dataset_id: string;
+  queries_dataset_id: string;
+  status: string;
+  created_at: string;
+}
+
+export interface IRExperimentListResponse {
+  experiments: IRExperimentListItem[];
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers);
 
@@ -214,4 +258,17 @@ export const api = {
     a.click();
     URL.revokeObjectURL(url);
   },
+
+  runIRExperiment: (req: IRExperimentRunRequest): Promise<IRExperimentRunResponse> =>
+    request('/experiments/ir/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    }),
+
+  getIRResults: (experimentId: string): Promise<IRResultsResponse> =>
+    request(`/experiments/ir/${experimentId}/results`),
+
+  listIRExperiments: (): Promise<IRExperimentListResponse> =>
+    request('/experiments/ir'),
 };

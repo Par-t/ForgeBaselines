@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { api, DatasetListItem, ExperimentListItem } from '@/lib/api';
+import { api, DatasetListItem, ExperimentListItem, IRExperimentListItem } from '@/lib/api';
 import { ProtectedRoute } from '@/components/protected-route';
 
 function formatDate(iso: string): string {
@@ -49,6 +49,7 @@ function DashboardContent() {
   const router = useRouter();
   const [datasets, setDatasets] = useState<DatasetListItem[]>([]);
   const [experiments, setExperiments] = useState<ExperimentListItem[]>([]);
+  const [irExperiments, setIRExperiments] = useState<IRExperimentListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ type: 'dataset' | 'experiment'; id: string } | null>(null);
@@ -56,9 +57,14 @@ function DashboardContent() {
 
   const load = useCallback(async () => {
     try {
-      const [ds, exps] = await Promise.all([api.listDatasets(), api.listExperiments()]);
+      const [ds, exps, irExps] = await Promise.all([
+        api.listDatasets(),
+        api.listExperiments(),
+        api.listIRExperiments(),
+      ]);
       setDatasets(ds.datasets);
       setExperiments(exps.experiments);
+      setIRExperiments(irExps.experiments);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load dashboard');
     } finally {
@@ -180,7 +186,9 @@ function DashboardContent() {
       </div>
 
       <div>
-        <h2 className="text-lg font-semibold mb-4">Experiments</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Classification Experiments</h2>
+        </div>
 
         {experiments.length === 0 ? (
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center text-gray-500 text-sm">
@@ -230,6 +238,61 @@ function DashboardContent() {
                         {deleting === e.experiment_id ? '…' : 'Delete'}
                       </button>
                     </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">IR Experiments</h2>
+          <Link
+            href="/experiment/new-ir"
+            className="text-sm px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors"
+          >
+            + New IR Experiment
+          </Link>
+        </div>
+
+        {irExperiments.length === 0 ? (
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center text-gray-500 text-sm">
+            No IR experiments yet.{' '}
+            <Link href="/experiment/new-ir" className="text-indigo-400 hover:text-white transition-colors">
+              Run your first BM25 experiment →
+            </Link>
+          </div>
+        ) : (
+          <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-800">
+                  <th className="text-left px-5 py-3 text-gray-500 font-medium">Experiment</th>
+                  <th className="text-left px-4 py-3 text-gray-500 font-medium">Corpus</th>
+                  <th className="text-left px-4 py-3 text-gray-500 font-medium">Queries</th>
+                  <th className="text-right px-4 py-3 text-gray-500 font-medium">Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {irExperiments.map((e) => (
+                  <tr key={e.experiment_id} className="border-b border-gray-800 last:border-0 hover:bg-gray-800/40 transition-colors">
+                    <td className="px-5 py-3 font-mono text-xs text-indigo-400">
+                      <Link
+                        href={`/experiment/ir/${e.experiment_id}/results`}
+                        className="hover:text-indigo-300 transition-colors"
+                      >
+                        {e.experiment_id.slice(0, 8)}…
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 text-gray-500 font-mono text-xs">
+                      {datasetNames[e.corpus_dataset_id] ?? e.corpus_dataset_id.slice(0, 8) + '…'}
+                    </td>
+                    <td className="px-4 py-3 text-gray-500 font-mono text-xs">
+                      {datasetNames[e.queries_dataset_id] ?? e.queries_dataset_id.slice(0, 8) + '…'}
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-500">{formatDate(e.created_at)}</td>
                   </tr>
                 ))}
               </tbody>

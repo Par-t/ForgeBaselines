@@ -13,6 +13,7 @@ services:
       - S3_BUCKET=${S3_BUCKET:-forgebaselines-artifacts}
       - MLFLOW_TRACKING_URI=http://mlflow:5000
       - CLASSIFICATION_SERVICE_URL=http://classification:8001
+      - IR_SERVICE_URL=http://ir:8002
       - ENV=${ENV:-development}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
@@ -27,6 +28,7 @@ services:
     depends_on:
       - mlflow
       - classification
+      - ir
 
   classification:
     build:
@@ -41,6 +43,25 @@ services:
     volumes:
       - ./services/classification/app:/app/app  # Hot reload
       - ./services/classification/tests:/app/tests  # Test files
+      - ./data:/app/data  # Shared data access
+    networks:
+      - forgebaselines
+    depends_on:
+      - mlflow
+
+  ir:
+    build:
+      context: ./services/ir
+      dockerfile: Dockerfile
+    container_name: forgebaselines-ir
+    ports:
+      - "8002:8002"
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - ENV=${ENV:-development}
+    volumes:
+      - ./services/ir/app:/app/app  # Hot reload
+      - ./services/ir/tests:/app/tests  # Test files
       - ./data:/app/data  # Shared data access
     networks:
       - forgebaselines
