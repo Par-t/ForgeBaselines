@@ -11,7 +11,10 @@ def test_model_registry():
     assert "logistic_regression" in models
     assert "random_forest" in models
     assert "gradient_boosting" in models
-    assert len(models) == 3
+    assert "xgboost" in models
+    assert "svm" in models
+    assert "knn" in models
+    assert len(models) == 6
 
 
 def test_logistic_regression():
