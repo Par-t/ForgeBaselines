@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import ProtectedRoute from '@/components/protected-route';
+import { ProtectedRoute } from '@/components/protected-route';
 import { api, DatasetListItem, IRExperimentRunRequest, TextPreprocessingConfig } from '@/lib/api';
 
 const DEFAULT_TEXT_PREPROCESSING: TextPreprocessingConfig = {
@@ -19,7 +19,14 @@ export default function NewIRExperimentPage() {
   const [datasets, setDatasets] = useState<DatasetListItem[]>([]);
   const [corpusDatasetId, setCorpusDatasetId] = useState('');
   const [queriesDatasetId, setQueriesDatasetId] = useState('');
+  // Corpus column mapping
+  const [corpusDocIdCol, setCorpusDocIdCol] = useState('doc_id');
   const [textColumn, setTextColumn] = useState('text');
+  // Queries column mapping
+  const [queriesQueryIdCol, setQueriesQueryIdCol] = useState('');
+  const [queriesQueryCol, setQueriesQueryCol] = useState('query');
+  const [queriesDocIdCol, setQueriesDocIdCol] = useState('doc_id');
+  const [queriesRelevanceCol, setQueriesRelevanceCol] = useState('');
   const [kValues, setKValues] = useState<number[]>([10, 100]);
   const [enableTextPreprocessing, setEnableTextPreprocessing] = useState(false);
   const [textPreprocessing, setTextPreprocessing] = useState<TextPreprocessingConfig>(DEFAULT_TEXT_PREPROCESSING);
@@ -64,7 +71,12 @@ export default function NewIRExperimentPage() {
     const req: IRExperimentRunRequest = {
       corpus_dataset_id: corpusDatasetId,
       queries_dataset_id: queriesDatasetId,
+      corpus_doc_id_col: corpusDocIdCol,
       text_column: textColumn,
+      queries_query_id_col: queriesQueryIdCol || undefined,
+      queries_query_col: queriesQueryCol,
+      queries_doc_id_col: queriesDocIdCol,
+      queries_relevance_col: queriesRelevanceCol || undefined,
       k_values: kValues,
       preprocessing_config: enableTextPreprocessing
         ? { scaling: 'none', class_balancing: 'none', text: textPreprocessing }
@@ -118,7 +130,7 @@ export default function NewIRExperimentPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Queries dataset <span className="text-gray-600 text-xs">(query_id, query, doc_id, relevance columns)</span></label>
+              <label className="block text-sm text-gray-400 mb-1">Queries dataset <span className="text-gray-600 text-xs">(query, doc_id required — query_id and relevance optional)</span></label>
               {loadingDatasets ? (
                 <div className="h-10 bg-gray-800 rounded animate-pulse" />
               ) : (
@@ -137,15 +149,43 @@ export default function NewIRExperimentPage() {
               )}
             </div>
 
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">Text column in corpus</label>
-              <input
-                type="text"
-                value={textColumn}
-                onChange={e => setTextColumn(e.target.value)}
-                placeholder="text"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
-              />
+            <div className="pt-2 border-t border-gray-800">
+              <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Corpus column mapping</p>
+              {([
+                ['corpusDocIdCol', corpusDocIdCol, setCorpusDocIdCol, 'document ID'],
+                ['textColumn', textColumn, setTextColumn, 'document body'],
+              ] as [string, string, (v: string) => void, string][]).map(([, val, setter, role]) => (
+                <div key={role} className="flex items-center gap-3 mb-2">
+                  <input
+                    type="text"
+                    value={val}
+                    onChange={e => setter(e.target.value)}
+                    className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500"
+                  />
+                  <span className="text-gray-500 text-xs whitespace-nowrap">→ {role}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="pt-2 border-t border-gray-800">
+              <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Queries column mapping</p>
+              {([
+                [queriesQueryIdCol, setQueriesQueryIdCol, 'query ID', 'auto (uses query text)'],
+                [queriesQueryCol, setQueriesQueryCol, 'query text', ''],
+                [queriesDocIdCol, setQueriesDocIdCol, 'relevant doc ID', ''],
+                [queriesRelevanceCol, setQueriesRelevanceCol, 'relevance score', 'optional (not used by BM25)'],
+              ] as [string, (v: string) => void, string, string][]).map(([val, setter, role, placeholder]) => (
+                <div key={role} className="flex items-center gap-3 mb-2">
+                  <input
+                    type="text"
+                    value={val}
+                    placeholder={placeholder}
+                    onChange={e => setter(e.target.value)}
+                    className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500 placeholder:text-gray-600"
+                  />
+                  <span className="text-gray-500 text-xs whitespace-nowrap">→ {role}</span>
+                </div>
+              ))}
             </div>
           </div>
 

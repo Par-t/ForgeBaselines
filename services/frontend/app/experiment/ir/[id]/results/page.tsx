@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import ProtectedRoute from '@/components/protected-route';
+import { ProtectedRoute } from '@/components/protected-route';
 import { api, IRResultsResponse } from '@/lib/api';
 
 function MetricCard({ label, value }: { label: string; value: number }) {

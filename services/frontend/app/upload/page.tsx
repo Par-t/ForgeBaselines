@@ -101,7 +101,7 @@ function UploadPageContent() {
   return (
     <div className="max-w-lg mx-auto">
       <h1 className="text-2xl font-bold mb-1">Upload Dataset</h1>
-      <p className="text-gray-500 text-sm mb-8">CSV files only · max 50 MB</p>
+      <p className="text-gray-500 text-sm mb-8">CSV files only</p>
 
       <div
         onDrop={onDrop}

@@ -134,7 +134,12 @@ export interface DeleteResponse {
 export interface IRExperimentRunRequest {
   corpus_dataset_id: string;
   queries_dataset_id: string;
+  corpus_doc_id_col?: string;
   text_column: string;
+  queries_query_id_col?: string;
+  queries_query_col?: string;
+  queries_doc_id_col?: string;
+  queries_relevance_col?: string;
   k_values: number[];
   preprocessing_config?: PreprocessingConfig;
 }

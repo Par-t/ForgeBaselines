@@ -7,9 +7,16 @@ from app.schemas.plan import PreprocessingConfig
 
 
 class IRExperimentRunRequest(BaseModel):
-    corpus_dataset_id: str = Field(..., description="Dataset ID of the corpus CSV (doc_id, text)")
-    queries_dataset_id: str = Field(..., description="Dataset ID of the queries CSV (query_id, query, doc_id, relevance)")
+    corpus_dataset_id: str = Field(..., description="Dataset ID of the corpus CSV")
+    queries_dataset_id: str = Field(..., description="Dataset ID of the queries CSV")
+    # Corpus column mapping
+    corpus_doc_id_col: str = Field(default="doc_id", description="Column in corpus for document ID")
     text_column: str = Field(default="text", description="Column in corpus containing document text")
+    # Queries column mapping
+    queries_query_id_col: Optional[str] = Field(default=None, description="Column in queries for query ID; if omitted, query text is used as ID")
+    queries_query_col: str = Field(default="query", description="Column in queries for query text")
+    queries_doc_id_col: str = Field(default="doc_id", description="Column in queries for relevant document ID")
+    queries_relevance_col: Optional[str] = Field(default=None, description="Column in queries for relevance score; not required by BM25 evaluation")
     k_values: List[int] = Field(default=[10, 100], description="Cutoff values for Recall and nDCG")
     preprocessing_config: Optional[PreprocessingConfig] = Field(
         default=None,

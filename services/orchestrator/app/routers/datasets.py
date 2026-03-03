@@ -38,7 +38,7 @@ async def upload_dataset(
     file.file.seek(0, 2)
     file_size = file.file.tell()
     file.file.seek(0)
-    if file_size > MAX_FILE_SIZE:
+    if settings.env != "development" and file_size > MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail="File too large (max 50MB)")
 
     dataset_id, file_path = storage.save_dataset(file, user_id)

@@ -24,9 +24,6 @@ from app.preprocessing.ir_pipeline import preprocess_ir_datasets
 
 router = APIRouter(prefix="/experiments/ir", tags=["ir-experiments"])
 
-_REQUIRED_CORPUS_COLS = {"doc_id"}
-_REQUIRED_QUERIES_COLS = {"query_id", "query", "doc_id", "relevance"}
-
 
 @router.post("/run", response_model=IRExperimentRunResponse)
 async def run_ir_experiment(
@@ -52,26 +49,46 @@ async def run_ir_experiment(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error reading queries: {str(e)}")
 
-    # Validate required columns
-    missing_corpus = _REQUIRED_CORPUS_COLS - set(corpus_df.columns)
-    if request.text_column not in corpus_df.columns:
-        missing_corpus.add(request.text_column)
+    # Validate user-specified column names exist, then rename to standard schema
+    corpus_user_cols = {request.corpus_doc_id_col, request.text_column}
+    missing_corpus = corpus_user_cols - set(corpus_df.columns)
     if missing_corpus:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Corpus missing required columns: {sorted(missing_corpus)}"
-        )
+        raise HTTPException(status_code=400, detail=f"Corpus missing columns: {sorted(missing_corpus)}")
 
-    missing_queries = _REQUIRED_QUERIES_COLS - set(queries_df.columns)
+    corpus_df = corpus_df.rename(columns={
+        request.corpus_doc_id_col: "doc_id",
+        request.text_column: "text",
+    })
+
+    # Required query columns; query_id and relevance are optional
+    queries_required_cols = {request.queries_query_col, request.queries_doc_id_col}
+    if request.queries_query_id_col:
+        queries_required_cols.add(request.queries_query_id_col)
+    if request.queries_relevance_col:
+        queries_required_cols.add(request.queries_relevance_col)
+
+    missing_queries = queries_required_cols - set(queries_df.columns)
     if missing_queries:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Queries CSV missing required columns: {sorted(missing_queries)}"
-        )
+        raise HTTPException(status_code=400, detail=f"Queries missing columns: {sorted(missing_queries)}")
 
-    # Preprocess text
+    queries_rename = {
+        request.queries_query_col: "query",
+        request.queries_doc_id_col: "doc_id",
+    }
+    if request.queries_query_id_col:
+        queries_rename[request.queries_query_id_col] = "query_id"
+    if request.queries_relevance_col:
+        queries_rename[request.queries_relevance_col] = "relevance"
+
+    queries_df = queries_df.rename(columns=queries_rename)
+
+    # Synthesize query_id from query text if not provided (groups identical queries correctly)
+    if "query_id" not in queries_df.columns:
+        queries_df["query_id"] = queries_df["query"]
+
+    # Preprocess text (columns are now normalized to standard names)
     corpus_df, queries_df = preprocess_ir_datasets(
-        corpus_df, queries_df, request.text_column, request.preprocessing_config
+        corpus_df, queries_df, "text", request.preprocessing_config
     )
 
     # Save preprocessed files
@@ -99,7 +116,7 @@ async def run_ir_experiment(
                 json={
                     "corpus_path": str(exp_dir / "corpus.csv"),
                     "queries_path": str(exp_dir / "queries.csv"),
-                    "text_column": request.text_column,
+                    "text_column": "text",
                     "k_values": request.k_values,
                     "experiment_id": experiment_id,
                     "user_id": user_id,
