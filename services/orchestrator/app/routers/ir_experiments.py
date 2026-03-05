@@ -1,6 +1,7 @@
 """IR experiment endpoints: run BM25 baselines, fetch results."""
 
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +24,14 @@ from app.services.storage import storage
 from app.preprocessing.ir_pipeline import preprocess_ir_datasets
 
 router = APIRouter(prefix="/experiments/ir", tags=["ir-experiments"])
+
+
+def _write_progress(exp_dir: Path, stage: str, pct: int, status: str, message: str) -> None:
+    """Atomically write progress.json so readers never see a partial file."""
+    data = json.dumps({"stage": stage, "pct": pct, "status": status, "message": message})
+    tmp = exp_dir / "progress.json.tmp"
+    tmp.write_text(data)
+    os.replace(tmp, exp_dir / "progress.json")
 
 
 @router.post("/run", response_model=IRExperimentRunResponse)
@@ -86,23 +95,30 @@ async def run_ir_experiment(
     if "query_id" not in queries_df.columns:
         queries_df["query_id"] = queries_df["query"]
 
+    # Create experiment directory early so progress.json is always reachable
+    experiment_id = str(uuid.uuid4())
+    exp_dir = Path(settings.data_path) / user_id / "ir" / experiment_id
+    exp_dir.mkdir(parents=True, exist_ok=True)
+
+    _write_progress(exp_dir, "queued", 0, "running", "Starting experiment...")
+
     # Preprocess text (columns are now normalized to standard names)
     corpus_df, queries_df = preprocess_ir_datasets(
         corpus_df, queries_df, "text", request.preprocessing_config
     )
 
-    # Save preprocessed files
-    experiment_id = str(uuid.uuid4())
-    exp_dir = Path(settings.data_path) / user_id / "ir" / experiment_id
-    exp_dir.mkdir(parents=True, exist_ok=True)
+    _write_progress(exp_dir, "preprocessing", 10, "running", "Preprocessing text...")
 
+    # Save preprocessed files
     corpus_df.to_csv(exp_dir / "corpus.csv", index=False)
     queries_df.to_csv(exp_dir / "queries.csv", index=False)
 
     # Save metadata for list endpoint
     meta = {
+        "task_type": "ir",
         "corpus_dataset_id": request.corpus_dataset_id,
         "queries_dataset_id": request.queries_dataset_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
     (exp_dir / "meta.json").write_text(json.dumps(meta))
 
@@ -137,12 +153,26 @@ async def run_ir_experiment(
     }
     (exp_dir / "results.json").write_text(json.dumps(results))
 
+    _write_progress(exp_dir, "done", 100, "completed", "Completed")
+
     return IRExperimentRunResponse(
         experiment_id=experiment_id,
         corpus_dataset_id=request.corpus_dataset_id,
         queries_dataset_id=request.queries_dataset_id,
         status="completed",
     )
+
+
+@router.get("/{experiment_id}/status")
+async def get_ir_experiment_status(
+    experiment_id: str,
+    user_id: str = Depends(get_user_id),
+):
+    """Return the current progress of an IR experiment."""
+    progress_path = Path(settings.data_path) / user_id / "ir" / experiment_id / "progress.json"
+    if not progress_path.exists():
+        raise HTTPException(status_code=404, detail="IR experiment not found")
+    return json.loads(progress_path.read_text())
 
 
 @router.get("/{experiment_id}/results", response_model=IRResultsResponse)
