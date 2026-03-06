@@ -1,6 +1,6 @@
 """Experiment schemas."""
 
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from pydantic import BaseModel
 
 
@@ -30,3 +30,21 @@ class ExperimentListItem(BaseModel):
 class ExperimentListResponse(BaseModel):
     """Response for listing experiments."""
     experiments: List[ExperimentListItem]
+
+
+class UnifiedExperimentListItem(BaseModel):
+    """Single experiment in the unified list (classification or IR)."""
+    experiment_id: str
+    task_type: str  # "classification" or "ir"
+    status: str
+    created_at: str
+    # classification only
+    dataset_id: Optional[str] = None
+    # IR only
+    corpus_dataset_id: Optional[str] = None
+    queries_dataset_id: Optional[str] = None
+
+
+class UnifiedExperimentListResponse(BaseModel):
+    """Response for the unified experiment list."""
+    experiments: List[UnifiedExperimentListItem]

@@ -10,12 +10,16 @@ import pandas as pd
 import httpx
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List
+from typing import List, Optional, Tuple
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.dependencies import get_user_id
-from app.schemas.experiment import RuntimeEstimateRequest, RuntimeEstimateResponse, ExperimentListItem, ExperimentListResponse
+from app.schemas.experiment import (
+    RuntimeEstimateRequest, RuntimeEstimateResponse,
+    ExperimentListItem, ExperimentListResponse,
+    UnifiedExperimentListItem, UnifiedExperimentListResponse,
+)
 from app.schemas.plan import ExperimentRunRequest, ExperimentRunResponse
 from app.schemas.dataset import DeleteResponse
 from app.config import settings
@@ -183,13 +187,12 @@ async def run_experiment(
 
 @router.get("/{experiment_id}/status")
 async def get_experiment_status(experiment_id: str, user_id: str = Depends(get_user_id)):
-    """Return the current progress of a classification experiment."""
-    dataset_id = _find_dataset_id_for_experiment(experiment_id, user_id)
-    if dataset_id is None:
+    """Return the current progress of an experiment (classification or IR)."""
+    location = _find_experiment_location(experiment_id, user_id)
+    if location is None:
         raise HTTPException(status_code=404, detail="Experiment not found")
-    progress_path = (
-        Path(settings.data_path) / user_id / dataset_id / "preprocessed" / experiment_id / "progress.json"
-    )
+    _, exp_dir = location
+    progress_path = exp_dir / "progress.json"
     if not progress_path.exists():
         # Pre-async experiments have no progress.json — treat as completed
         return {"stage": "done", "pct": 100, "status": "completed", "message": "Completed"}
@@ -198,18 +201,31 @@ async def get_experiment_status(experiment_id: str, user_id: str = Depends(get_u
 
 @router.get("/{experiment_id}/results")
 async def get_experiment_results(experiment_id: str, user_id: str = Depends(get_user_id)):
-    """Get experiment results from MLflow."""
-    dataset_id = _find_dataset_id_for_experiment(experiment_id, user_id)
-    if dataset_id is None:
+    """Get experiment results (classification or IR)."""
+    location = _find_experiment_location(experiment_id, user_id)
+    if location is None:
         raise HTTPException(status_code=404, detail="Experiment not found")
+    task_type, exp_dir = location
 
+    if task_type == "ir":
+        results_path = exp_dir / "results.json"
+        if not results_path.exists():
+            raise HTTPException(status_code=404, detail="IR results not ready yet")
+        data = json.loads(results_path.read_text())
+        return {
+            "experiment_id": experiment_id,
+            "task_type": "ir",
+            "metrics": data["metrics"],
+            "n_docs": data["n_docs"],
+            "n_queries": data["n_queries"],
+        }
+
+    # Classification — fetch from MLflow
     mlflow_url = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
     leaderboard, label_mapping = await _fetch_mlflow_results(mlflow_url, experiment_id)
-
     return {
         "experiment_id": experiment_id,
-        "user_id": user_id,
-        "status": "completed",
+        "task_type": "classification",
         "label_mapping": label_mapping,
         "leaderboard": leaderboard,
     }
@@ -260,6 +276,86 @@ async def delete_experiment(experiment_id: str, user_id: str = Depends(get_user_
     return DeleteResponse(message=f"Experiment {experiment_id} deleted")
 
 
+@router.get("/all", response_model=UnifiedExperimentListResponse)
+async def list_all_experiments(user_id: str = Depends(get_user_id)):
+    """List all experiments (classification + IR) for the current user, sorted newest-first."""
+    user_dir = Path(settings.data_path) / user_id
+    experiments = []
+
+    if not user_dir.exists():
+        return UnifiedExperimentListResponse(experiments=[])
+
+    # --- classification experiments ---
+    for dataset_dir in user_dir.iterdir():
+        if dataset_dir.name == "ir" or not dataset_dir.is_dir():
+            continue
+        preprocessed_dir = dataset_dir / "preprocessed"
+        if not preprocessed_dir.exists():
+            continue
+        dataset_id = dataset_dir.name
+        for exp_dir in preprocessed_dir.iterdir():
+            if not exp_dir.is_dir():
+                continue
+
+            meta_path = exp_dir / "meta.json"
+            if meta_path.exists():
+                meta = json.loads(meta_path.read_text())
+                created_at = meta.get(
+                    "created_at",
+                    datetime.fromtimestamp(exp_dir.stat().st_mtime, tz=timezone.utc).isoformat(),
+                )
+            else:
+                # Legacy experiment without meta.json — infer from dir structure
+                created_at = datetime.fromtimestamp(exp_dir.stat().st_mtime, tz=timezone.utc).isoformat()
+
+            progress_path = exp_dir / "progress.json"
+            status = json.loads(progress_path.read_text()).get("status", "completed") if progress_path.exists() else "completed"
+
+            experiments.append(UnifiedExperimentListItem(
+                experiment_id=exp_dir.name,
+                task_type="classification",
+                status=status,
+                created_at=created_at,
+                dataset_id=dataset_id,
+            ))
+
+    # --- IR experiments ---
+    ir_dir = user_dir / "ir"
+    if ir_dir.exists():
+        for exp_dir in ir_dir.iterdir():
+            if not exp_dir.is_dir():
+                continue
+
+            meta_path = exp_dir / "meta.json"
+            if meta_path.exists():
+                meta = json.loads(meta_path.read_text())
+                created_at = meta.get(
+                    "created_at",
+                    datetime.fromtimestamp(exp_dir.stat().st_mtime, tz=timezone.utc).isoformat(),
+                )
+                corpus_dataset_id = meta.get("corpus_dataset_id")
+                queries_dataset_id = meta.get("queries_dataset_id")
+            else:
+                created_at = datetime.fromtimestamp(exp_dir.stat().st_mtime, tz=timezone.utc).isoformat()
+                corpus_dataset_id = None
+                queries_dataset_id = None
+
+            progress_path = exp_dir / "progress.json"
+            status = json.loads(progress_path.read_text()).get("status", "completed") if progress_path.exists() else "completed"
+
+            experiments.append(UnifiedExperimentListItem(
+                experiment_id=exp_dir.name,
+                task_type="ir",
+                status=status,
+                created_at=created_at,
+                corpus_dataset_id=corpus_dataset_id,
+                queries_dataset_id=queries_dataset_id,
+            ))
+
+    experiments.sort(key=lambda e: e.created_at, reverse=True)
+    return UnifiedExperimentListResponse(experiments=experiments)
+
+
 @router.get("", response_model=ExperimentListResponse)
 async def list_experiments(user_id: str = Depends(get_user_id)):
     """List all experiments for the current user."""
@@ -299,6 +395,25 @@ async def list_experiments(user_id: str = Depends(get_user_id)):
 
 
 # ------------------------------------------------------------------ helpers
+
+def _find_experiment_location(experiment_id: str, user_id: str) -> Optional[Tuple[str, Path]]:
+    """Return ("classification", path) or ("ir", path) or None if not found."""
+    user_dir = Path(settings.data_path) / user_id
+    if not user_dir.exists():
+        return None
+    # IR is a flat O(1) check — try it first
+    ir_path = user_dir / "ir" / experiment_id
+    if ir_path.exists():
+        return ("ir", ir_path)
+    # Walk classification dataset dirs
+    for dataset_dir in user_dir.iterdir():
+        if dataset_dir.name == "ir" or not dataset_dir.is_dir():
+            continue
+        exp_path = dataset_dir / "preprocessed" / experiment_id
+        if exp_path.exists():
+            return ("classification", exp_path)
+    return None
+
 
 def _find_dataset_id_for_experiment(experiment_id: str, user_id: str):
     """Return the dataset_id that owns this experiment, or None if not found."""
