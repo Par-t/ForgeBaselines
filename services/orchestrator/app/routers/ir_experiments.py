@@ -8,7 +8,7 @@ from pathlib import Path
 
 import httpx
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from app.dependencies import get_user_id
 from app.schemas.ir_plan import (
@@ -34,13 +34,67 @@ def _write_progress(exp_dir: Path, stage: str, pct: int, status: str, message: s
     os.replace(tmp, exp_dir / "progress.json")
 
 
+async def _run_ir_background(
+    corpus_df: pd.DataFrame,
+    queries_df: pd.DataFrame,
+    exp_dir: Path,
+    request: IRExperimentRunRequest,
+    user_id: str,
+    experiment_id: str,
+) -> None:
+    """Background task: preprocess, call IR service, persist results."""
+    try:
+        _write_progress(exp_dir, "preprocessing", 10, "running", "Preprocessing text...")
+        corpus_df, queries_df = preprocess_ir_datasets(
+            corpus_df, queries_df, "text", request.preprocessing_config
+        )
+
+        corpus_df.to_csv(exp_dir / "corpus.csv", index=False)
+        queries_df.to_csv(exp_dir / "queries.csv", index=False)
+
+        meta = {
+            "task_type": "ir",
+            "corpus_dataset_id": request.corpus_dataset_id,
+            "queries_dataset_id": request.queries_dataset_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        (exp_dir / "meta.json").write_text(json.dumps(meta))
+
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            response = await client.post(
+                f"{settings.ir_service_url}/retrieve",
+                json={
+                    "corpus_path": str(exp_dir / "corpus.csv"),
+                    "queries_path": str(exp_dir / "queries.csv"),
+                    "text_column": "text",
+                    "k_values": request.k_values,
+                    "experiment_id": experiment_id,
+                    "user_id": user_id,
+                },
+            )
+            response.raise_for_status()
+
+        data = response.json()
+        results = {
+            "metrics": data["metrics"],
+            "n_docs": data["n_docs"],
+            "n_queries": data["n_queries"],
+        }
+        (exp_dir / "results.json").write_text(json.dumps(results))
+        _write_progress(exp_dir, "done", 100, "completed", "Completed")
+
+    except Exception as e:
+        _write_progress(exp_dir, "error", 0, "failed", f"Error: {str(e)}")
+
+
 @router.post("/run", response_model=IRExperimentRunResponse)
 async def run_ir_experiment(
     request: IRExperimentRunRequest,
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_user_id),
 ):
-    """Run a BM25 IR experiment end-to-end."""
-    # Load corpus
+    """Start a BM25 IR experiment. Returns immediately; poll /status for progress."""
+    # Load and validate synchronously so bad input gets an immediate error response
     try:
         corpus_path = storage.get_dataset_path(request.corpus_dataset_id, user_id)
         corpus_df = pd.read_csv(corpus_path)
@@ -49,7 +103,6 @@ async def run_ir_experiment(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error reading corpus: {str(e)}")
 
-    # Load queries
     try:
         queries_path = storage.get_dataset_path(request.queries_dataset_id, user_id)
         queries_df = pd.read_csv(queries_path)
@@ -58,7 +111,6 @@ async def run_ir_experiment(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error reading queries: {str(e)}")
 
-    # Validate user-specified column names exist, then rename to standard schema
     corpus_user_cols = {request.corpus_doc_id_col, request.text_column}
     missing_corpus = corpus_user_cols - set(corpus_df.columns)
     if missing_corpus:
@@ -69,7 +121,6 @@ async def run_ir_experiment(
         request.text_column: "text",
     })
 
-    # Required query columns; query_id and relevance are optional
     queries_required_cols = {request.queries_query_col, request.queries_doc_id_col}
     if request.queries_query_id_col:
         queries_required_cols.add(request.queries_query_id_col)
@@ -91,75 +142,24 @@ async def run_ir_experiment(
 
     queries_df = queries_df.rename(columns=queries_rename)
 
-    # Synthesize query_id from query text if not provided (groups identical queries correctly)
     if "query_id" not in queries_df.columns:
         queries_df["query_id"] = queries_df["query"]
 
-    # Create experiment directory early so progress.json is always reachable
+    # Create dir + write initial progress, then return immediately
     experiment_id = str(uuid.uuid4())
     exp_dir = Path(settings.data_path) / user_id / "ir" / experiment_id
     exp_dir.mkdir(parents=True, exist_ok=True)
-
     _write_progress(exp_dir, "queued", 0, "running", "Starting experiment...")
 
-    # Preprocess text (columns are now normalized to standard names)
-    corpus_df, queries_df = preprocess_ir_datasets(
-        corpus_df, queries_df, "text", request.preprocessing_config
+    background_tasks.add_task(
+        _run_ir_background, corpus_df, queries_df, exp_dir, request, user_id, experiment_id
     )
-
-    _write_progress(exp_dir, "preprocessing", 10, "running", "Preprocessing text...")
-
-    # Save preprocessed files
-    corpus_df.to_csv(exp_dir / "corpus.csv", index=False)
-    queries_df.to_csv(exp_dir / "queries.csv", index=False)
-
-    # Save metadata for list endpoint
-    meta = {
-        "task_type": "ir",
-        "corpus_dataset_id": request.corpus_dataset_id,
-        "queries_dataset_id": request.queries_dataset_id,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
-    (exp_dir / "meta.json").write_text(json.dumps(meta))
-
-    # Call IR service
-    ir_url = settings.ir_service_url
-
-    async with httpx.AsyncClient(timeout=300.0) as client:
-        try:
-            response = await client.post(
-                f"{ir_url}/retrieve",
-                json={
-                    "corpus_path": str(exp_dir / "corpus.csv"),
-                    "queries_path": str(exp_dir / "queries.csv"),
-                    "text_column": "text",
-                    "k_values": request.k_values,
-                    "experiment_id": experiment_id,
-                    "user_id": user_id,
-                },
-            )
-            response.raise_for_status()
-        except httpx.HTTPError as e:
-            raise HTTPException(status_code=500, detail=f"IR service error: {str(e)}")
-
-    data = response.json()
-    metrics_data = data["metrics"]
-
-    # Persist results
-    results = {
-        "metrics": metrics_data,
-        "n_docs": data["n_docs"],
-        "n_queries": data["n_queries"],
-    }
-    (exp_dir / "results.json").write_text(json.dumps(results))
-
-    _write_progress(exp_dir, "done", 100, "completed", "Completed")
 
     return IRExperimentRunResponse(
         experiment_id=experiment_id,
         corpus_dataset_id=request.corpus_dataset_id,
         queries_dataset_id=request.queries_dataset_id,
-        status="completed",
+        status="running",
     )
 
 

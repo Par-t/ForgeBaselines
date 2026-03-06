@@ -2,6 +2,7 @@
 
 import csv
 import io
+import json
 import os
 import uuid
 import numpy as np
@@ -10,7 +11,7 @@ import httpx
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.dependencies import get_user_id
@@ -24,6 +25,69 @@ from app.services.runtime_estimator import estimate_runtime
 from app.preprocessing.pipeline import preprocess_dataset
 
 router = APIRouter(prefix="/experiments", tags=["experiments"])
+
+
+def _write_progress(exp_dir: Path, stage: str, pct: int, status: str, message: str) -> None:
+    """Atomically write progress.json so readers never see a partial file."""
+    data = json.dumps({"stage": stage, "pct": pct, "status": status, "message": message})
+    tmp = exp_dir / "progress.json.tmp"
+    tmp.write_text(data)
+    os.replace(tmp, exp_dir / "progress.json")
+
+
+async def _run_classification_background(
+    df: pd.DataFrame,
+    request,
+    exp_dir: Path,
+    experiment_id: str,
+    user_id: str,
+) -> None:
+    """Background task: preprocess data, call classification service, write progress."""
+    try:
+        _write_progress(exp_dir, "preprocessing", 10, "running", "Preprocessing data...")
+        try:
+            X_train, X_test, y_train, y_test, preprocessor, label_classes = preprocess_dataset(
+                df, request.target_column, request.test_size,
+                column_config=request.column_config,
+                preprocessing_config=request.preprocessing_config,
+            )
+        except Exception as e:
+            _write_progress(exp_dir, "error", 0, "failed", f"Preprocessing failed: {str(e)}")
+            return
+
+        np.save(exp_dir / "X_train.npy", X_train)
+        np.save(exp_dir / "X_test.npy", X_test)
+        np.save(exp_dir / "y_train.npy", y_train)
+        np.save(exp_dir / "y_test.npy", y_test)
+
+        n_models = len(request.model_names)
+        _write_progress(exp_dir, "training", 20, "running", f"Training {n_models} model(s)...")
+
+        classification_url = os.getenv("CLASSIFICATION_SERVICE_URL", "http://classification:8001")
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            response = await client.post(
+                f"{classification_url}/train",
+                json={
+                    "X_train_path": str(exp_dir / "X_train.npy"),
+                    "X_test_path": str(exp_dir / "X_test.npy"),
+                    "y_train_path": str(exp_dir / "y_train.npy"),
+                    "y_test_path": str(exp_dir / "y_test.npy"),
+                    "model_names": request.model_names,
+                    "label_classes": label_classes,
+                    "user_id": user_id,
+                    "experiment_id": experiment_id,
+                    "use_class_weight": (
+                        request.preprocessing_config is not None
+                        and request.preprocessing_config.class_balancing == "class_weight"
+                    ),
+                }
+            )
+            response.raise_for_status()
+
+        _write_progress(exp_dir, "done", 100, "completed", "Completed")
+
+    except Exception as e:
+        _write_progress(exp_dir, "error", 0, "failed", f"Training failed: {str(e)}")
 
 
 @router.post("/estimate", response_model=RuntimeEstimateResponse)
@@ -54,9 +118,10 @@ async def estimate_experiment_runtime(
 @router.post("/run", response_model=ExperimentRunResponse)
 async def run_experiment(
     request: ExperimentRunRequest,
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_user_id)
 ):
-    """Run a baseline experiment end-to-end."""
+    """Start a classification experiment. Returns immediately; poll /status for progress."""
     try:
         file_path = storage.get_dataset_path(request.dataset_id, user_id)
         df = pd.read_csv(file_path)
@@ -89,58 +154,46 @@ async def run_experiment(
     profile = profile_dataset(df)
     runtime_estimate = estimate_runtime(profile, request.model_names)
 
-    try:
-        X_train, X_test, y_train, y_test, preprocessor, label_classes = preprocess_dataset(
-            df, request.target_column, request.test_size,
-            column_config=request.column_config,
-            preprocessing_config=request.preprocessing_config,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Preprocessing failed: {str(e)}")
-
     experiment_id = str(uuid.uuid4())
-    temp_dir = Path(f"{settings.data_path}/{user_id}/{request.dataset_id}/preprocessed/{experiment_id}")
-    temp_dir.mkdir(parents=True, exist_ok=True)
+    exp_dir = Path(f"{settings.data_path}/{user_id}/{request.dataset_id}/preprocessed/{experiment_id}")
+    exp_dir.mkdir(parents=True, exist_ok=True)
 
-    np.save(temp_dir / "X_train.npy", X_train)
-    np.save(temp_dir / "X_test.npy", X_test)
-    np.save(temp_dir / "y_train.npy", y_train)
-    np.save(temp_dir / "y_test.npy", y_test)
+    meta = {
+        "task_type": "classification",
+        "dataset_id": request.dataset_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    (exp_dir / "meta.json").write_text(json.dumps(meta))
+    _write_progress(exp_dir, "queued", 0, "running", "Starting experiment...")
 
-    classification_url = os.getenv("CLASSIFICATION_SERVICE_URL", "http://classification:8001")
-
-    async with httpx.AsyncClient(timeout=300.0) as client:
-        try:
-            response = await client.post(
-                f"{classification_url}/train",
-                json={
-                    "X_train_path": str(temp_dir / "X_train.npy"),
-                    "X_test_path": str(temp_dir / "X_test.npy"),
-                    "y_train_path": str(temp_dir / "y_train.npy"),
-                    "y_test_path": str(temp_dir / "y_test.npy"),
-                    "model_names": request.model_names,
-                    "label_classes": label_classes,
-                    "user_id": user_id,
-                    "experiment_id": experiment_id,
-                    "use_class_weight": (
-                        request.preprocessing_config is not None
-                        and request.preprocessing_config.class_balancing == "class_weight"
-                    ),
-                }
-            )
-            response.raise_for_status()
-        except httpx.HTTPError as e:
-            raise HTTPException(status_code=500, detail=f"Training service error: {str(e)}")
+    background_tasks.add_task(
+        _run_classification_background, df, request, exp_dir, experiment_id, user_id
+    )
 
     return ExperimentRunResponse(
         experiment_id=experiment_id,
         dataset_id=request.dataset_id,
-        status="completed",
+        status="running",
         estimated_runtime=runtime_estimate["overall_estimate"],
         models=request.model_names,
         column_config_used=request.column_config,
         preprocessing_config_used=request.preprocessing_config,
     )
+
+
+@router.get("/{experiment_id}/status")
+async def get_experiment_status(experiment_id: str, user_id: str = Depends(get_user_id)):
+    """Return the current progress of a classification experiment."""
+    dataset_id = _find_dataset_id_for_experiment(experiment_id, user_id)
+    if dataset_id is None:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+    progress_path = (
+        Path(settings.data_path) / user_id / dataset_id / "preprocessed" / experiment_id / "progress.json"
+    )
+    if not progress_path.exists():
+        # Pre-async experiments have no progress.json — treat as completed
+        return {"stage": "done", "pct": 100, "status": "completed", "message": "Completed"}
+    return json.loads(progress_path.read_text())
 
 
 @router.get("/{experiment_id}/results")
