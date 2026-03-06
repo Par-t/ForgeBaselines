@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ProtectedRoute } from '@/components/protected-route';
-import { api, IRResultsResponse } from '@/lib/api';
+import { api, IRResultsResponse, ProgressStatus } from '@/lib/api';
 
 function MetricCard({ label, value }: { label: string; value: number }) {
   return (
@@ -19,27 +19,37 @@ export default function IRResultsPage() {
   const params = useParams();
   const experimentId = params.id as string;
 
+  const [progress, setProgress] = useState<ProgressStatus | null>(null);
   const [results, setResults] = useState<IRResultsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const stopPolling = () => {
+    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+  };
+
   useEffect(() => {
     async function poll() {
       try {
-        const data = await api.getIRResults(experimentId);
-        if (data.status === 'completed' && data.metrics) {
+        const status = await api.getIRStatus(experimentId);
+        setProgress(status);
+        if (status.status === 'completed') {
+          stopPolling();
+          const data = await api.getIRResults(experimentId);
           setResults(data);
-          if (intervalRef.current) clearInterval(intervalRef.current);
+        } else if (status.status === 'failed') {
+          stopPolling();
+          setError(status.message);
         }
       } catch (err) {
+        stopPolling();
         setError(err instanceof Error ? err.message : 'Failed to load results');
-        if (intervalRef.current) clearInterval(intervalRef.current);
       }
     }
 
     poll();
     intervalRef.current = setInterval(poll, 2000);
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+    return () => stopPolling();
   }, [experimentId]);
 
   return (
@@ -55,11 +65,21 @@ export default function IRResultsPage() {
               </Link>
             </div>
           ) : !results ? (
-            <div className="text-center py-24">
-              <div className="inline-block w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-6" />
-              <p className="text-lg font-semibold">Running IR experiment...</p>
-              <p className="text-sm text-gray-400 mt-2">Building BM25 index and computing metrics</p>
-              <p className="text-xs text-gray-600 mt-4 font-mono">{experimentId}</p>
+            <div className="flex flex-col items-center gap-6 py-24">
+              <div className="inline-block w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+              <div className="w-full max-w-sm">
+                <div className="flex justify-between text-xs text-gray-400 mb-2">
+                  <span>{progress?.message ?? 'Starting experiment...'}</span>
+                  <span className="font-mono">{progress?.pct ?? 0}%</span>
+                </div>
+                <div className="w-full bg-gray-800 rounded-full h-1.5">
+                  <div
+                    className="bg-indigo-500 h-1.5 rounded-full transition-all duration-500"
+                    style={{ width: `${progress?.pct ?? 0}%` }}
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-gray-600 font-mono">{experimentId}</p>
             </div>
           ) : (
             <>

@@ -2,6 +2,7 @@
 
 import json
 import os
+import time
 from pathlib import Path
 from typing import List
 
@@ -51,17 +52,19 @@ def run_retrieval(
         qid = str(row["query_id"])
         qrels.setdefault(qid, set()).add(str(row["doc_id"]))
 
-    # Retrieve for each unique query — write progress every ~10% of queries
+    # Retrieve for each unique query — write progress every ~1 second
     query_texts = queries_df.groupby("query_id")["query"].first().to_dict()
     max_k = max(k_values)
     n = len(query_texts)
-    tick = max(1, n // 10)
     results = {}
+    last_write = time.monotonic()
     for i, (qid, query) in enumerate(query_texts.items()):
         results[str(qid)] = retriever.retrieve(str(query), max_k)
-        if i % tick == 0:
+        now = time.monotonic()
+        if now - last_write >= 1.0:
             pct = 35 + int(50 * i / n)  # 35% → 85% across query loop
             _write_progress(exp_dir, "scoring", pct, "running", f"Scoring queries ({i + 1}/{n})...")
+            last_write = now
 
     _write_progress(exp_dir, "metrics", 90, "running", "Computing metrics...")
 

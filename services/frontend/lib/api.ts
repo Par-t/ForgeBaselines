@@ -180,6 +180,13 @@ export interface IRExperimentListResponse {
   experiments: IRExperimentListItem[];
 }
 
+export interface ProgressStatus {
+  stage: string;
+  pct: number;
+  status: string;
+  message: string;
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers);
 
@@ -276,4 +283,10 @@ export const api = {
 
   listIRExperiments: (): Promise<IRExperimentListResponse> =>
     request('/experiments/ir'),
+
+  getExperimentStatus: (experimentId: string): Promise<ProgressStatus> =>
+    request(`/experiments/${experimentId}/status`),
+
+  getIRStatus: (experimentId: string): Promise<ProgressStatus> =>
+    request(`/experiments/ir/${experimentId}/status`),
 };

@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { api, ExperimentResultsResponse } from '@/lib/api'
+import { api, ExperimentResultsResponse, ProgressStatus } from '@/lib/api'
 import { ProtectedRoute } from '@/components/protected-route'
 
 const MODEL_LABELS: Record<string, string> = {
@@ -20,9 +20,15 @@ function ResultsPageContent() {
   const params = useParams()
   const experimentId = params.id as string
 
+  const [progress, setProgress] = useState<ProgressStatus | null>(null)
   const [results, setResults] = useState<ExperimentResultsResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [downloading, setDownloading] = useState(false)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const stopPolling = () => {
+    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null }
+  }
 
   const handleDownload = async () => {
     setDownloading(true)
@@ -40,18 +46,25 @@ function ResultsPageContent() {
 
     const poll = async () => {
       try {
-        const data = await api.getResults(experimentId)
-        if (data.leaderboard.length > 0) {
+        const status = await api.getExperimentStatus(experimentId)
+        setProgress(status)
+        if (status.status === 'completed') {
+          stopPolling()
+          const data = await api.getResults(experimentId)
           setResults(data)
+        } else if (status.status === 'failed') {
+          stopPolling()
+          setError(status.message)
         }
       } catch (e: unknown) {
+        stopPolling()
         setError(e instanceof Error ? e.message : 'Failed to load results')
       }
     }
 
     poll()
-    const interval = setInterval(poll, 2000)
-    return () => clearInterval(interval)
+    intervalRef.current = setInterval(poll, 2000)
+    return () => stopPolling()
   }, [experimentId])
 
   if (error) {
@@ -68,12 +81,22 @@ function ResultsPageContent() {
   }
 
   if (!results) {
+    const pct = progress?.pct ?? 0
+    const message = progress?.message ?? 'Starting experiment...'
     return (
       <div className="max-w-2xl mx-auto flex flex-col items-center gap-6 py-20">
         <div className="w-10 h-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-        <div className="text-center">
-          <p className="text-gray-200 font-medium">Running experiment...</p>
-          <p className="text-gray-500 text-sm mt-1">Training models and logging metrics to MLflow</p>
+        <div className="w-full max-w-sm">
+          <div className="flex justify-between text-xs text-gray-400 mb-2">
+            <span>{message}</span>
+            <span className="font-mono">{pct}%</span>
+          </div>
+          <div className="w-full bg-gray-800 rounded-full h-1.5">
+            <div
+              className="bg-indigo-500 h-1.5 rounded-full transition-all duration-500"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
         </div>
         <p className="text-xs font-mono text-gray-700">{experimentId}</p>
       </div>
