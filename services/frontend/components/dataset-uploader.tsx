@@ -71,7 +71,7 @@ export function DatasetUploader({ onUploadComplete, className }: DatasetUploader
           type="file"
           accept=".csv"
           onChange={e => { const f = e.target.files?.[0]; if (f) uploadFile(f) }}
-          className="hidden"
+          style={{ display: 'none' }}
         />
 
         {isUploading ? (

@@ -34,6 +34,7 @@ function NewExperimentForm() {
   // For the dataset picker (shown when no dataset_id param)
   const [availableDatasets, setAvailableDatasets] = useState<DatasetListItem[]>([])
   const [datasetsLoading, setDatasetsLoading] = useState(false)
+  const [showUpload, setShowUpload] = useState(false)
 
   useEffect(() => {
     if (searchParams.get('dataset_id')) return
@@ -145,13 +146,13 @@ function NewExperimentForm() {
         <p className="text-gray-500 text-sm mb-8">Select a dataset to configure your experiment</p>
 
         {datasetsLoading ? (
-          <div className="flex items-center gap-3 text-gray-400 mb-6">
+          <div className="flex items-center gap-3 text-gray-400">
             <Spinner />
             Loading datasets...
           </div>
         ) : availableDatasets.length > 0 ? (
-          <section className="mb-8">
-            <label className="block text-sm font-medium text-gray-300 mb-2">Existing dataset</label>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Dataset</label>
             <select
               defaultValue=""
               onChange={e => e.target.value && setPickedDatasetId(e.target.value)}
@@ -164,15 +165,26 @@ function NewExperimentForm() {
                 </option>
               ))}
             </select>
-          </section>
-        ) : null}
-
-        <div>
-          <p className="text-sm font-medium text-gray-300 mb-3">
-            {availableDatasets.length > 0 ? 'Or upload a new dataset' : 'Upload a dataset'}
-          </p>
+            <button
+              type="button"
+              onClick={() => setShowUpload(v => !v)}
+              className="mt-1.5 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+            >
+              {showUpload ? '▲ hide upload' : '↑ or upload new'}
+            </button>
+            {showUpload && (
+              <div className="mt-3">
+                <DatasetUploader onUploadComplete={(r: DatasetUploadResponse) => {
+                  setPickedDatasetId(r.dataset_id)
+                  setAvailableDatasets(prev => [...prev, { dataset_id: r.dataset_id, filename: r.filename, rows: r.rows, cols: r.cols, created_at: '', experiment_count: 0 }])
+                  setShowUpload(false)
+                }} />
+              </div>
+            )}
+          </div>
+        ) : (
           <DatasetUploader onUploadComplete={(r: DatasetUploadResponse) => setPickedDatasetId(r.dataset_id)} />
-        </div>
+        )}
       </div>
     )
   }
