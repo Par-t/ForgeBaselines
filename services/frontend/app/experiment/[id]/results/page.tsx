@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { api, UnifiedResultsResponse, ProgressStatus } from '@/lib/api'
 import { ProtectedRoute } from '@/components/protected-route'
@@ -30,13 +30,27 @@ function MetricCard({ label, value }: { label: string; value: number }) {
 
 function ResultsPageContent() {
   const params = useParams()
+  const router = useRouter()
   const experimentId = params.id as string
 
   const [progress, setProgress] = useState<ProgressStatus | null>(null)
   const [results, setResults] = useState<UnifiedResultsResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [downloading, setDownloading] = useState(false)
+  const [cancelDatasetId, setCancelDatasetId] = useState<string | null>(null)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem('experimentDraft')
+      if (saved) setCancelDatasetId(JSON.parse(saved).datasetId ?? null)
+    } catch { /* ignore */ }
+  }, [])
+
+  const handleCancel = () => {
+    stopPolling()
+    router.push(`/experiment/new?dataset_id=${cancelDatasetId || ''}`)
+  }
 
   const stopPolling = () => {
     if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null }
@@ -114,6 +128,14 @@ function ResultsPageContent() {
           </div>
         </div>
         <p className="text-xs font-mono text-gray-700">{experimentId}</p>
+        {cancelDatasetId && (
+          <button
+            onClick={handleCancel}
+            className="text-xs text-gray-600 hover:text-gray-400 transition-colors mt-2"
+          >
+            ← Cancel and go back
+          </button>
+        )}
       </div>
     )
   }

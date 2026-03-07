@@ -21,7 +21,7 @@ function ProfileContent() {
   useEffect(() => {
     async function load() {
       try {
-        const [ds, exps] = await Promise.all([api.listDatasets(), api.listExperiments()]);
+        const [ds, exps] = await Promise.all([api.listDatasets(), api.listAllExperiments()]);
         setDatasetCount(ds.datasets.length);
         setExperimentCount(exps.experiments.length);
       } catch {

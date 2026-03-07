@@ -276,16 +276,24 @@ async def download_experiment_results(experiment_id: str, user_id: str = Depends
 @router.delete("/{experiment_id}", response_model=DeleteResponse)
 async def delete_experiment(experiment_id: str, user_id: str = Depends(get_user_id)):
     """Delete an experiment (preprocessed data + MLflow runs). Leaves dataset intact."""
-    dataset_id = _find_dataset_id_for_experiment(experiment_id, user_id)
-    if dataset_id is None:
+    import shutil
+    location = _find_experiment_location(experiment_id, user_id)
+    if location is None:
         raise HTTPException(status_code=404, detail="Experiment not found")
+
+    task_type, exp_path = location
 
     mlflow_url = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
     async with httpx.AsyncClient() as client:
         from app.routers.datasets import _delete_mlflow_experiment
         await _delete_mlflow_experiment(client, mlflow_url, experiment_id)
 
-    storage.delete_experiment(user_id, dataset_id, experiment_id)
+    if task_type == "ir":
+        shutil.rmtree(exp_path, ignore_errors=True)
+    else:
+        # exp_path is the experiment dir inside dataset/preprocessed/
+        dataset_id = exp_path.parent.parent.name
+        storage.delete_experiment(user_id, dataset_id, experiment_id)
 
     return DeleteResponse(message=f"Experiment {experiment_id} deleted")
 

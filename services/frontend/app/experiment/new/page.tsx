@@ -75,6 +75,22 @@ function NewExperimentForm() {
   })
   const [enableTextPreprocessing, setEnableTextPreprocessing] = useState(false)
 
+  // Restore config saved before last redirect (from cancel/back flow)
+  useEffect(() => {
+    const saved = sessionStorage.getItem('experimentDraft')
+    if (!saved) return
+    try {
+      const d = JSON.parse(saved)
+      if (d.targetColumn) setTargetColumn(d.targetColumn)
+      if (d.selectedModels) setSelectedModels(d.selectedModels)
+      if (d.testSize) setTestSize(d.testSize)
+      if (d.preprocessing) setPreprocessing(d.preprocessing)
+      if (d.textPreprocessing) setTextPreprocessing(d.textPreprocessing)
+      if (d.enableTextPreprocessing) setEnableTextPreprocessing(d.enableTextPreprocessing)
+    } catch { /* ignore */ }
+    sessionStorage.removeItem('experimentDraft')
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Load column names from profile
   useEffect(() => {
     if (!datasetId) return
@@ -126,6 +142,9 @@ function NewExperimentForm() {
     setIsRunning(true)
     setError(null)
     const experimentId = crypto.randomUUID()
+    sessionStorage.setItem('experimentDraft', JSON.stringify({
+      datasetId, targetColumn, selectedModels, testSize, preprocessing, textPreprocessing, enableTextPreprocessing,
+    }))
     router.push(`/experiment/${experimentId}/results`)
     try {
       await api.runExperiment({

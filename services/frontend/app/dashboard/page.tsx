@@ -241,15 +241,13 @@ function DashboardContent() {
                       </td>
                       <td className="px-4 py-3 text-right text-gray-500">{formatDate(e.created_at)}</td>
                       <td className="px-4 py-3 text-right">
-                        {e.task_type === 'classification' && (
-                          <button
-                            onClick={() => setConfirm({ type: 'experiment', id: e.experiment_id })}
-                            disabled={deleting === e.experiment_id}
-                            className="text-xs text-red-600 hover:text-red-400 transition-colors disabled:opacity-40"
-                          >
-                            {deleting === e.experiment_id ? '…' : 'Delete'}
-                          </button>
-                        )}
+                        <button
+                          onClick={() => setConfirm({ type: 'experiment', id: e.experiment_id })}
+                          disabled={deleting === e.experiment_id}
+                          className="text-xs text-red-600 hover:text-red-400 transition-colors disabled:opacity-40"
+                        >
+                          {deleting === e.experiment_id ? '…' : 'Delete'}
+                        </button>
                       </td>
                     </tr>
                   );
