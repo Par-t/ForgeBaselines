@@ -98,6 +98,10 @@ class PreprocessingConfig(BaseModel):
 class ExperimentRunRequest(BaseModel):
     """Request to run an experiment."""
 
+    experiment_id: Optional[str] = Field(
+        default=None,
+        description="Client-supplied experiment ID. When provided, the backend uses this ID so the frontend can redirect immediately.",
+    )
     dataset_id: str = Field(..., description="ID of uploaded dataset")
     target_column: str = Field(..., description="Name of target column")
     model_names: List[str] = Field(..., description="List of model names to train")

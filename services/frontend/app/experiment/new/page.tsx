@@ -45,6 +45,9 @@ function NewExperimentForm() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [columns, setColumns] = useState<string[]>([])
+  const [columnTypes, setColumnTypes] = useState<Record<string, string>>({})
+  const [missingByColumn, setMissingByColumn] = useState<Record<string, number>>({})
+  const [showColumnOverview, setShowColumnOverview] = useState(false)
   const [targetColumn, setTargetColumn] = useState('')
   const [selectedModels, setSelectedModels] = useState<string[]>([
     'logistic_regression',
@@ -77,7 +80,11 @@ function NewExperimentForm() {
     if (!datasetId) return
     api
       .getProfile(datasetId)
-      .then(r => setColumns(r.profile.column_names))
+      .then(r => {
+        setColumns(r.profile.column_names)
+        setColumnTypes(r.profile.column_types)
+        setMissingByColumn(r.profile.missing_by_column)
+      })
       .catch(() => setError('Failed to load dataset profile.'))
       .finally(() => setProfileLoading(false))
   }, [datasetId])
@@ -118,8 +125,11 @@ function NewExperimentForm() {
     if (!datasetId || !targetColumn || selectedModels.length === 0) return
     setIsRunning(true)
     setError(null)
+    const experimentId = crypto.randomUUID()
+    router.push(`/experiment/${experimentId}/results`)
     try {
-      const result = await api.runExperiment({
+      await api.runExperiment({
+        experiment_id: experimentId,
         dataset_id: datasetId,
         target_column: targetColumn,
         model_names: selectedModels,
@@ -132,10 +142,9 @@ function NewExperimentForm() {
           text: enableTextPreprocessing ? textPreprocessing : undefined,
         },
       })
-      router.push(`/experiment/${result.experiment_id}/results`)
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Experiment failed')
-      setIsRunning(false)
+      // Redirect already happened — go back to form with error in query param
+      router.push(`/experiment/new?dataset_id=${datasetId}&error=${encodeURIComponent(e instanceof Error ? e.message : 'Experiment failed')}`)
     }
   }
 
@@ -224,6 +233,55 @@ function NewExperimentForm() {
           ))}
         </select>
       </section>
+
+      {/* Column overview */}
+      {columns.length > 0 && (
+        <div className="mt-2 mb-7">
+          <button
+            onClick={() => setShowColumnOverview(v => !v)}
+            className="flex items-center gap-2 text-xs text-gray-600 hover:text-gray-400 transition-colors"
+          >
+            <span>{showColumnOverview ? '▲' : '▼'} {columns.length} columns</span>
+          </button>
+          {showColumnOverview && (
+            <div className="mt-2 bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-gray-800">
+                    <th className="text-left px-3 py-2 text-gray-600 font-medium">Column</th>
+                    <th className="text-left px-3 py-2 text-gray-600 font-medium">Type</th>
+                    <th className="text-right px-3 py-2 text-gray-600 font-medium">Missing</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {columns.map(col => {
+                    const dtype = columnTypes[col] ?? ''
+                    const missing = missingByColumn[col] ?? 0
+                    const isNumeric = dtype.startsWith('int') || dtype.startsWith('float')
+                    const isBool = dtype === 'bool'
+                    const badgeClass = isNumeric
+                      ? 'text-blue-400 bg-blue-950/40'
+                      : isBool
+                      ? 'text-purple-400 bg-purple-950/40'
+                      : 'text-amber-400 bg-amber-950/30'
+                    return (
+                      <tr key={col} className="border-b border-gray-800/50 last:border-0">
+                        <td className="px-3 py-1.5 font-mono text-gray-300">{col}</td>
+                        <td className="px-3 py-1.5">
+                          <span className={`px-1.5 py-0.5 rounded text-xs ${badgeClass}`}>{dtype}</span>
+                        </td>
+                        <td className="px-3 py-1.5 text-right text-gray-600">
+                          {missing > 0 ? <span className="text-amber-500">{missing}</span> : '—'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Column suggestions */}
       {suggestions && flaggedCount > 0 && (

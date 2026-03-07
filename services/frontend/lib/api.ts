@@ -68,6 +68,7 @@ export interface PreprocessingConfig {
 }
 
 export interface ExperimentRunRequest {
+  experiment_id?: string;
   dataset_id: string;
   target_column: string;
   model_names: string[];

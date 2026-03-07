@@ -69,8 +69,11 @@ function ResultsPageContent() {
           setError(status.message)
         }
       } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : ''
+        // Tolerate brief 404s while the experiment is being created server-side
+        if (msg.startsWith('404')) return
         stopPolling()
-        setError(e instanceof Error ? e.message : 'Failed to load results')
+        setError(msg || 'Failed to load results')
       }
     }
 

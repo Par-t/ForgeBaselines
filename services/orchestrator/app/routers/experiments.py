@@ -132,15 +132,31 @@ async def run_experiment(
     user_id: str = Depends(get_user_id)
 ):
     """Start a classification experiment. Returns immediately; poll /status for progress."""
+    # Create the experiment directory and write initial progress immediately
+    # so the frontend can redirect before the (potentially slow) CSV read.
+    experiment_id = request.experiment_id or str(uuid.uuid4())
+    exp_dir = Path(f"{settings.data_path}/{user_id}/{request.dataset_id}/preprocessed/{experiment_id}")
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    meta = {
+        "task_type": "classification",
+        "dataset_id": request.dataset_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    (exp_dir / "meta.json").write_text(json.dumps(meta))
+    _write_progress(exp_dir, "queued", 0, "running", "Starting experiment...")
+
     try:
         file_path = storage.get_dataset_path(request.dataset_id, user_id)
         df = pd.read_csv(file_path)
     except FileNotFoundError:
+        _write_progress(exp_dir, "error", 0, "failed", "Dataset not found")
         raise HTTPException(status_code=404, detail="Dataset not found")
     except Exception as e:
+        _write_progress(exp_dir, "error", 0, "failed", f"Error reading dataset: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Error reading dataset: {str(e)}")
 
     if request.target_column not in df.columns:
+        _write_progress(exp_dir, "error", 0, "failed", f"Target column '{request.target_column}' not found")
         raise HTTPException(
             status_code=400,
             detail=f"Target column '{request.target_column}' not found in dataset. Available columns: {df.columns.tolist()}"
@@ -151,6 +167,7 @@ async def run_experiment(
         bad_ignore = set(request.column_config.ignore_columns) - all_cols - {request.target_column}
         bad_features = set(request.column_config.feature_columns) - all_cols - {request.target_column}
         if bad_ignore or bad_features:
+            _write_progress(exp_dir, "error", 0, "failed", "Invalid column config")
             raise HTTPException(
                 status_code=400,
                 detail={
@@ -163,18 +180,6 @@ async def run_experiment(
 
     profile = profile_dataset(df)
     runtime_estimate = estimate_runtime(profile, request.model_names)
-
-    experiment_id = str(uuid.uuid4())
-    exp_dir = Path(f"{settings.data_path}/{user_id}/{request.dataset_id}/preprocessed/{experiment_id}")
-    exp_dir.mkdir(parents=True, exist_ok=True)
-
-    meta = {
-        "task_type": "classification",
-        "dataset_id": request.dataset_id,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
-    (exp_dir / "meta.json").write_text(json.dumps(meta))
-    _write_progress(exp_dir, "queued", 0, "running", "Starting experiment...")
 
     background_tasks.add_task(
         _run_classification_background, df, request, exp_dir, experiment_id, user_id

@@ -33,6 +33,8 @@ export default function NewIRExperimentPage() {
   const [textPreprocessing, setTextPreprocessing] = useState<TextPreprocessingConfig>(DEFAULT_TEXT_PREPROCESSING);
   const [showCorpusUpload, setShowCorpusUpload] = useState(false);
   const [showQueriesUpload, setShowQueriesUpload] = useState(false);
+  const [corpusColumns, setCorpusColumns] = useState<string[]>([]);
+  const [queriesColumns, setQueriesColumns] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingDatasets, setLoadingDatasets] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +45,16 @@ export default function NewIRExperimentPage() {
       .catch(() => setError('Failed to load datasets'))
       .finally(() => setLoadingDatasets(false));
   }, []);
+
+  useEffect(() => {
+    if (!corpusDatasetId) { setCorpusColumns([]); return; }
+    api.getProfile(corpusDatasetId).then(r => setCorpusColumns(r.profile.column_names)).catch(() => {});
+  }, [corpusDatasetId]);
+
+  useEffect(() => {
+    if (!queriesDatasetId) { setQueriesColumns([]); return; }
+    api.getProfile(queriesDatasetId).then(r => setQueriesColumns(r.profile.column_names)).catch(() => {});
+  }, [queriesDatasetId]);
 
   function toggleK(k: number) {
     setKValues(prev =>
@@ -176,44 +188,51 @@ export default function NewIRExperimentPage() {
               )}
             </div>
 
-            <div className="pt-2 border-t border-gray-800">
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Corpus column mapping</p>
-              {([
-                ['corpusDocIdCol', corpusDocIdCol, setCorpusDocIdCol, 'document ID'],
-                ['textColumn', textColumn, setTextColumn, 'document body'],
-              ] as [string, string, (v: string) => void, string][]).map(([, val, setter, role]) => (
-                <div key={role} className="flex items-center gap-3 mb-2">
-                  <input
-                    type="text"
-                    value={val}
-                    onChange={e => setter(e.target.value)}
-                    className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500"
-                  />
-                  <span className="text-gray-500 text-xs whitespace-nowrap">→ {role}</span>
-                </div>
-              ))}
-            </div>
+            {corpusColumns.length > 0 && (
+              <div className="pt-2 border-t border-gray-800">
+                <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Corpus column mapping</p>
+                {([
+                  [corpusDocIdCol, setCorpusDocIdCol, 'document ID'],
+                  [textColumn, setTextColumn, 'document body'],
+                ] as [string, (v: string) => void, string][]).map(([val, setter, role]) => (
+                  <div key={role} className="flex items-center gap-3 mb-2">
+                    <select
+                      value={val}
+                      onChange={e => setter(e.target.value)}
+                      className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500"
+                    >
+                      <option value="">Select column...</option>
+                      {corpusColumns.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <span className="text-gray-500 text-xs whitespace-nowrap">→ {role}</span>
+                  </div>
+                ))}
+              </div>
+            )}
 
-            <div className="pt-2 border-t border-gray-800">
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Queries column mapping</p>
-              {([
-                [queriesQueryIdCol, setQueriesQueryIdCol, 'query ID', 'auto (uses query text)'],
-                [queriesQueryCol, setQueriesQueryCol, 'query text', ''],
-                [queriesDocIdCol, setQueriesDocIdCol, 'relevant doc ID', ''],
-                [queriesRelevanceCol, setQueriesRelevanceCol, 'relevance score', 'optional (not used by BM25)'],
-              ] as [string, (v: string) => void, string, string][]).map(([val, setter, role, placeholder]) => (
-                <div key={role} className="flex items-center gap-3 mb-2">
-                  <input
-                    type="text"
-                    value={val}
-                    placeholder={placeholder}
-                    onChange={e => setter(e.target.value)}
-                    className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500 placeholder:text-gray-600"
-                  />
-                  <span className="text-gray-500 text-xs whitespace-nowrap">→ {role}</span>
-                </div>
-              ))}
-            </div>
+            {queriesColumns.length > 0 && (
+              <div className="pt-2 border-t border-gray-800">
+                <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Queries column mapping</p>
+                {([
+                  [queriesQueryIdCol, setQueriesQueryIdCol, 'query ID', true],
+                  [queriesQueryCol, setQueriesQueryCol, 'query text', false],
+                  [queriesDocIdCol, setQueriesDocIdCol, 'relevant doc ID', false],
+                  [queriesRelevanceCol, setQueriesRelevanceCol, 'relevance score', true],
+                ] as [string, (v: string) => void, string, boolean][]).map(([val, setter, role, optional]) => (
+                  <div key={role} className="flex items-center gap-3 mb-2">
+                    <select
+                      value={val}
+                      onChange={e => setter(e.target.value)}
+                      className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500"
+                    >
+                      <option value="">{optional ? 'optional' : 'Select column...'}</option>
+                      {queriesColumns.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <span className="text-gray-500 text-xs whitespace-nowrap">→ {role}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* k values */}
