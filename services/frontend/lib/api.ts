@@ -187,6 +187,35 @@ export interface ProgressStatus {
   message: string;
 }
 
+export interface UnifiedExperimentListItem {
+  experiment_id: string;
+  task_type: 'classification' | 'ir';
+  status: string;
+  created_at: string;
+  dataset_id?: string;
+  corpus_dataset_id?: string;
+  queries_dataset_id?: string;
+}
+
+export interface UnifiedExperimentListResponse {
+  experiments: UnifiedExperimentListItem[];
+}
+
+export type UnifiedResultsResponse =
+  | {
+      experiment_id: string;
+      task_type: 'classification';
+      label_mapping: Record<string, string>;
+      leaderboard: ModelResult[];
+    }
+  | {
+      experiment_id: string;
+      task_type: 'ir';
+      metrics: IRMetrics;
+      n_docs: number;
+      n_queries: number;
+    };
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers);
 
@@ -289,4 +318,10 @@ export const api = {
 
   getIRStatus: (experimentId: string): Promise<ProgressStatus> =>
     request(`/experiments/ir/${experimentId}/status`),
+
+  listAllExperiments: (): Promise<UnifiedExperimentListResponse> =>
+    request('/experiments/all'),
+
+  getUnifiedResults: (experimentId: string): Promise<UnifiedResultsResponse> =>
+    request(`/experiments/${experimentId}/results`),
 };

@@ -1,13 +1,17 @@
 """IR experiment endpoints: run BM25 baselines, fetch results."""
 
 import json
+import logging
 import os
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from app.dependencies import get_user_id
@@ -43,11 +47,16 @@ async def _run_ir_background(
     experiment_id: str,
 ) -> None:
     """Background task: preprocess, call IR service, persist results."""
+    logger.info("[IR %s] Background task started", experiment_id)
+    t0 = time.monotonic()
     try:
         _write_progress(exp_dir, "preprocessing", 10, "running", "Preprocessing text...")
+        logger.info("[IR %s] Preprocessing datasets", experiment_id)
         corpus_df, queries_df = preprocess_ir_datasets(
             corpus_df, queries_df, "text", request.preprocessing_config
         )
+        logger.info("[IR %s] Preprocessing done. corpus=%d rows, queries=%d rows",
+                    experiment_id, len(corpus_df), len(queries_df))
 
         corpus_df.to_csv(exp_dir / "corpus.csv", index=False)
         queries_df.to_csv(exp_dir / "queries.csv", index=False)
@@ -60,6 +69,8 @@ async def _run_ir_background(
         }
         (exp_dir / "meta.json").write_text(json.dumps(meta))
 
+        _write_progress(exp_dir, "retrieving", 30, "running", "Calling IR service...")
+        logger.info("[IR %s] Calling IR service at %s", experiment_id, settings.ir_service_url)
         async with httpx.AsyncClient(timeout=300.0) as client:
             response = await client.post(
                 f"{settings.ir_service_url}/retrieve",
@@ -74,6 +85,7 @@ async def _run_ir_background(
             )
             response.raise_for_status()
 
+        logger.info("[IR %s] IR service responded in %.1fs", experiment_id, time.monotonic() - t0)
         data = response.json()
         results = {
             "metrics": data["metrics"],
@@ -82,8 +94,10 @@ async def _run_ir_background(
         }
         (exp_dir / "results.json").write_text(json.dumps(results))
         _write_progress(exp_dir, "done", 100, "completed", "Completed")
+        logger.info("[IR %s] Completed in %.1fs. metrics=%s", experiment_id, time.monotonic() - t0, data["metrics"])
 
     except Exception as e:
+        logger.exception("[IR %s] Failed after %.1fs: %s", experiment_id, time.monotonic() - t0, e)
         _write_progress(exp_dir, "error", 0, "failed", f"Error: {str(e)}")
 
 
@@ -169,7 +183,12 @@ async def get_ir_experiment_status(
     user_id: str = Depends(get_user_id),
 ):
     """Return the current progress of an IR experiment."""
-    progress_path = Path(settings.data_path) / user_id / "ir" / experiment_id / "progress.json"
+    exp_dir = Path(settings.data_path) / user_id / "ir" / experiment_id
+    if not exp_dir.exists():
+        raise HTTPException(status_code=404, detail="IR experiment not found")
+    if (exp_dir / "results.json").exists():
+        return {"stage": "done", "pct": 100, "status": "completed", "message": "Completed"}
+    progress_path = exp_dir / "progress.json"
     if not progress_path.exists():
         raise HTTPException(status_code=404, detail="IR experiment not found")
     return json.loads(progress_path.read_text())

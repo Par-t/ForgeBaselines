@@ -19,7 +19,7 @@ export default function LoginPage() {
   // Redirect if already logged in
   useEffect(() => {
     if (user) {
-      router.replace('/');
+      router.replace('/select');
     }
   }, [user, router]);
 

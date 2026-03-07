@@ -1,10 +1,13 @@
+'use client'
+
 import Link from 'next/link'
+import { useAuth } from '@/lib/auth-context'
 
 const steps = [
   {
     num: '01',
-    title: 'Upload',
-    desc: 'Drop any CSV. We profile column types, detect missing values, and flag ID columns automatically.',
+    title: 'Select Task',
+    desc: 'Choose classification or information retrieval. Upload your dataset inline — no separate upload page.',
   },
   {
     num: '02',
@@ -14,11 +17,13 @@ const steps = [
   {
     num: '03',
     title: 'Results',
-    desc: 'Logistic regression, random forest, and gradient boosting — ranked by F1 score.',
+    desc: 'Leaderboard for classification, or MAP/nDCG/MRR metrics for IR — all tracked in MLflow.',
   },
 ]
 
 export default function Home() {
+  const { user } = useAuth()
+
   return (
     <div className="flex flex-col items-center text-center py-16 gap-10">
       <div>
@@ -26,7 +31,7 @@ export default function Home() {
           <span className="text-indigo-400">Forge</span>Baselines
         </h1>
         <p className="text-lg text-gray-400 max-w-lg mx-auto">
-          Generate reproducible ML baselines for tabular classification in seconds.
+          Generate reproducible ML baselines for classification and information retrieval in seconds.
           No setup, no boilerplate — just results.
         </p>
       </div>
@@ -44,12 +49,21 @@ export default function Home() {
         ))}
       </div>
 
-      <Link
-        href="/upload"
-        className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-3 rounded-lg font-medium transition-colors text-sm"
-      >
-        Upload Dataset <span aria-hidden>→</span>
-      </Link>
+      {user ? (
+        <Link
+          href="/select"
+          className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-3 rounded-lg font-medium transition-colors text-sm"
+        >
+          New Experiment <span aria-hidden>→</span>
+        </Link>
+      ) : (
+        <Link
+          href="/login"
+          className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-3 rounded-lg font-medium transition-colors text-sm"
+        >
+          Get Started <span aria-hidden>→</span>
+        </Link>
+      )}
     </div>
   )
 }

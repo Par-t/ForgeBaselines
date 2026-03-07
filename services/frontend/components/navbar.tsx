@@ -29,8 +29,8 @@ export function Navbar() {
               <Link href="/dashboard" className="text-gray-400 hover:text-white transition-colors">
                 Dashboard
               </Link>
-              <Link href="/upload" className="text-gray-400 hover:text-white transition-colors">
-                Upload
+              <Link href="/select" className="text-gray-400 hover:text-white transition-colors">
+                New Experiment
               </Link>
               <Link href="/profile" className="text-gray-400 hover:text-white transition-colors">
                 Profile
