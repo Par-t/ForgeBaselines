@@ -5,9 +5,9 @@ import pandas as pd
 import numpy as np
 import pytest
 
-from app.schemas.plan import ColumnConfig, ExperimentRunRequest, SuggestColumnsResponse
+from app.schemas.classification import ColumnConfig, ExperimentRunRequest, SuggestColumnsResponse
 from app.services.profiler import profile_dataset, suggest_column_config
-from app.preprocessing.pipeline import preprocess_dataset
+from app.preprocessing.classification_pipeline import preprocess_dataset
 
 
 # ---------------------------------------------------------------------------

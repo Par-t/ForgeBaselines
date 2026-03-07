@@ -4,7 +4,7 @@ from typing import Optional, Tuple
 
 import pandas as pd
 
-from app.schemas.plan import PreprocessingConfig
+from app.schemas.classification import PreprocessingConfig
 from app.preprocessing.text import preprocess_text_column
 
 

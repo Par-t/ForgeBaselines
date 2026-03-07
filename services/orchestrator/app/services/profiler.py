@@ -3,7 +3,7 @@
 import pandas as pd
 from typing import Dict, Any, Tuple
 
-from app.schemas.plan import ColumnConfig
+from app.schemas.classification import ColumnConfig
 
 
 def profile_dataset(df: pd.DataFrame) -> Dict[str, Any]:

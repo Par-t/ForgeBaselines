@@ -3,7 +3,9 @@
 import csv
 import io
 import json
+import logging
 import os
+import time
 import uuid
 import numpy as np
 import pandas as pd
@@ -11,6 +13,8 @@ import httpx
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
@@ -20,13 +24,15 @@ from app.schemas.experiment import (
     ExperimentListItem, ExperimentListResponse,
     UnifiedExperimentListItem, UnifiedExperimentListResponse,
 )
-from app.schemas.plan import ExperimentRunRequest, ExperimentRunResponse
+from app.schemas.classification import ExperimentRunRequest, ExperimentRunResponse
+from app.schemas.ir import IRExperimentRunRequest, IRExperimentRunResponse
 from app.schemas.dataset import DeleteResponse
 from app.config import settings
 from app.services.storage import storage
 from app.services.profiler import profile_dataset
 from app.services.runtime_estimator import estimate_runtime
-from app.preprocessing.pipeline import preprocess_dataset
+from app.preprocessing.classification_pipeline import preprocess_dataset
+from app.preprocessing.ir_pipeline import preprocess_ir_datasets
 
 router = APIRouter(prefix="/experiments", tags=["experiments"])
 
@@ -191,7 +197,10 @@ async def get_experiment_status(experiment_id: str, user_id: str = Depends(get_u
     location = _find_experiment_location(experiment_id, user_id)
     if location is None:
         raise HTTPException(status_code=404, detail="Experiment not found")
-    _, exp_dir = location
+    task_type, exp_dir = location
+    # results.json written = experiment completed; guard against stale progress.json
+    if task_type == "ir" and (exp_dir / "results.json").exists():
+        return {"stage": "done", "pct": 100, "status": "completed", "message": "Completed"}
     progress_path = exp_dir / "progress.json"
     if not progress_path.exists():
         # Pre-async experiments have no progress.json — treat as completed
@@ -479,3 +488,142 @@ async def _fetch_mlflow_results(mlflow_url: str, experiment_id: str):
         if label_classes else {}
     )
     return leaderboard, label_mapping
+
+
+# ------------------------------------------------------------------ IR run
+
+async def _run_ir_background(
+    corpus_df: pd.DataFrame,
+    queries_df: pd.DataFrame,
+    exp_dir: Path,
+    request: IRExperimentRunRequest,
+    user_id: str,
+    experiment_id: str,
+) -> None:
+    """Background task: preprocess, call IR service, persist results."""
+    logger.info("[IR %s] Background task started", experiment_id)
+    t0 = time.monotonic()
+    try:
+        _write_progress(exp_dir, "preprocessing", 10, "running", "Preprocessing text...")
+        logger.info("[IR %s] Preprocessing datasets", experiment_id)
+        corpus_df, queries_df = preprocess_ir_datasets(
+            corpus_df, queries_df, "text", request.preprocessing_config
+        )
+        logger.info("[IR %s] Preprocessing done. corpus=%d rows, queries=%d rows",
+                    experiment_id, len(corpus_df), len(queries_df))
+
+        corpus_df.to_csv(exp_dir / "corpus.csv", index=False)
+        queries_df.to_csv(exp_dir / "queries.csv", index=False)
+
+        meta = {
+            "task_type": "ir",
+            "corpus_dataset_id": request.corpus_dataset_id,
+            "queries_dataset_id": request.queries_dataset_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        (exp_dir / "meta.json").write_text(json.dumps(meta))
+
+        _write_progress(exp_dir, "retrieving", 30, "running", "Calling IR service...")
+        logger.info("[IR %s] Calling IR service at %s", experiment_id, settings.ir_service_url)
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            response = await client.post(
+                f"{settings.ir_service_url}/retrieve",
+                json={
+                    "corpus_path": str(exp_dir / "corpus.csv"),
+                    "queries_path": str(exp_dir / "queries.csv"),
+                    "text_column": "text",
+                    "k_values": request.k_values,
+                    "experiment_id": experiment_id,
+                    "user_id": user_id,
+                },
+            )
+            response.raise_for_status()
+
+        logger.info("[IR %s] IR service responded in %.1fs", experiment_id, time.monotonic() - t0)
+        data = response.json()
+        results = {
+            "metrics": data["metrics"],
+            "n_docs": data["n_docs"],
+            "n_queries": data["n_queries"],
+        }
+        (exp_dir / "results.json").write_text(json.dumps(results))
+        _write_progress(exp_dir, "done", 100, "completed", "Completed")
+        logger.info("[IR %s] Completed in %.1fs. metrics=%s", experiment_id, time.monotonic() - t0, data["metrics"])
+
+    except Exception as e:
+        logger.exception("[IR %s] Failed after %.1fs: %s", experiment_id, time.monotonic() - t0, e)
+        _write_progress(exp_dir, "error", 0, "failed", f"Error: {str(e)}")
+
+
+@router.post("/ir/run", response_model=IRExperimentRunResponse)
+async def run_ir_experiment(
+    request: IRExperimentRunRequest,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(get_user_id),
+):
+    """Start a BM25 IR experiment. Returns immediately; poll /status for progress."""
+    try:
+        corpus_path = storage.get_dataset_path(request.corpus_dataset_id, user_id)
+        corpus_df = pd.read_csv(corpus_path)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Corpus dataset not found")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error reading corpus: {str(e)}")
+
+    try:
+        queries_path = storage.get_dataset_path(request.queries_dataset_id, user_id)
+        queries_df = pd.read_csv(queries_path)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Queries dataset not found")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error reading queries: {str(e)}")
+
+    corpus_user_cols = {request.corpus_doc_id_col, request.text_column}
+    missing_corpus = corpus_user_cols - set(corpus_df.columns)
+    if missing_corpus:
+        raise HTTPException(status_code=400, detail=f"Corpus missing columns: {sorted(missing_corpus)}")
+
+    corpus_df = corpus_df.rename(columns={
+        request.corpus_doc_id_col: "doc_id",
+        request.text_column: "text",
+    })
+
+    queries_required_cols = {request.queries_query_col, request.queries_doc_id_col}
+    if request.queries_query_id_col:
+        queries_required_cols.add(request.queries_query_id_col)
+    if request.queries_relevance_col:
+        queries_required_cols.add(request.queries_relevance_col)
+
+    missing_queries = queries_required_cols - set(queries_df.columns)
+    if missing_queries:
+        raise HTTPException(status_code=400, detail=f"Queries missing columns: {sorted(missing_queries)}")
+
+    queries_rename = {
+        request.queries_query_col: "query",
+        request.queries_doc_id_col: "doc_id",
+    }
+    if request.queries_query_id_col:
+        queries_rename[request.queries_query_id_col] = "query_id"
+    if request.queries_relevance_col:
+        queries_rename[request.queries_relevance_col] = "relevance"
+
+    queries_df = queries_df.rename(columns=queries_rename)
+
+    if "query_id" not in queries_df.columns:
+        queries_df["query_id"] = queries_df["query"]
+
+    experiment_id = str(uuid.uuid4())
+    exp_dir = Path(settings.data_path) / user_id / "ir" / experiment_id
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    _write_progress(exp_dir, "queued", 0, "running", "Starting experiment...")
+
+    background_tasks.add_task(
+        _run_ir_background, corpus_df, queries_df, exp_dir, request, user_id, experiment_id
+    )
+
+    return IRExperimentRunResponse(
+        experiment_id=experiment_id,
+        corpus_dataset_id=request.corpus_dataset_id,
+        queries_dataset_id=request.queries_dataset_id,
+        status="running",
+    )

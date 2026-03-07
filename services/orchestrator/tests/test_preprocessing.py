@@ -3,7 +3,7 @@
 import pandas as pd
 import numpy as np
 import pytest
-from app.preprocessing.pipeline import preprocess_dataset
+from app.preprocessing.classification_pipeline import preprocess_dataset
 
 
 def test_preprocess_iris():

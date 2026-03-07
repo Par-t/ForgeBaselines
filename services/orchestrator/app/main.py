@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import health, datasets, experiments, ir_experiments
+from app.routers import health, datasets, experiments
 from app.config import settings
 from app.firebase import init_firebase
 
@@ -115,7 +115,6 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(datasets.router)
 app.include_router(experiments.router)
-app.include_router(ir_experiments.router)
 
 
 @app.get("/")

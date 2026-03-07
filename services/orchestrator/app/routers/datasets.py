@@ -16,7 +16,7 @@ from app.schemas.dataset import (
     DatasetListResponse,
     DeleteResponse,
 )
-from app.schemas.plan import SuggestColumnsResponse
+from app.schemas.classification import SuggestColumnsResponse
 from app.services.storage import storage
 from app.services.profiler import profile_dataset, suggest_column_config
 from app.config import settings

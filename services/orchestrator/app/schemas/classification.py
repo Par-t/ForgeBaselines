@@ -1,4 +1,4 @@
-"""Experiment plan schemas (V2-ready)."""
+"""Classification experiment schemas."""
 
 from typing import List, Optional, Literal
 from pydantic import BaseModel, Field, model_validator

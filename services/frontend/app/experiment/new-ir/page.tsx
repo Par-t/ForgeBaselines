@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProtectedRoute } from '@/components/protected-route';
 import { api, DatasetListItem, IRExperimentRunRequest, TextPreprocessingConfig } from '@/lib/api';
+import { DatasetUploader } from '@/components/dataset-uploader';
 
 const DEFAULT_TEXT_PREPROCESSING: TextPreprocessingConfig = {
   lowercase: true,
@@ -30,6 +31,8 @@ export default function NewIRExperimentPage() {
   const [kValues, setKValues] = useState<number[]>([10, 100]);
   const [enableTextPreprocessing, setEnableTextPreprocessing] = useState(false);
   const [textPreprocessing, setTextPreprocessing] = useState<TextPreprocessingConfig>(DEFAULT_TEXT_PREPROCESSING);
+  const [showCorpusUpload, setShowCorpusUpload] = useState(false);
+  const [showQueriesUpload, setShowQueriesUpload] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingDatasets, setLoadingDatasets] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +88,7 @@ export default function NewIRExperimentPage() {
 
     try {
       const result = await api.runIRExperiment(req);
-      router.push(`/experiment/ir/${result.experiment_id}/results`);
+      router.push(`/experiment/${result.experiment_id}/results`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start experiment');
       setLoading(false);
@@ -97,7 +100,7 @@ export default function NewIRExperimentPage() {
       <div className="min-h-screen bg-gray-950 text-gray-100 p-8">
         <div className="max-w-2xl mx-auto">
           <h1 className="text-2xl font-bold mb-1">New IR Experiment</h1>
-          <p className="text-gray-400 text-sm mb-8">BM25 retrieval — upload corpus + queries CSVs first via the Upload page.</p>
+          <p className="text-gray-400 text-sm mb-8">BM25 retrieval baseline — select or upload corpus and queries datasets.</p>
 
           {error && (
             <div className="mb-6 p-4 bg-red-950/50 border border-red-800 rounded-lg text-red-300 text-sm">
@@ -127,6 +130,18 @@ export default function NewIRExperimentPage() {
                   ))}
                 </select>
               )}
+              <button
+                type="button"
+                onClick={() => setShowCorpusUpload(v => !v)}
+                className="mt-1.5 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+              >
+                {showCorpusUpload ? '▲ hide upload' : '↑ or upload new'}
+              </button>
+              {showCorpusUpload && (
+                <div className="mt-3">
+                  <DatasetUploader onUploadComplete={r => { setCorpusDatasetId(r.dataset_id); setDatasets(prev => [...prev, { dataset_id: r.dataset_id, filename: r.filename, rows: r.rows, cols: r.cols, created_at: '', experiment_count: 0 }]); setShowCorpusUpload(false); }} />
+                </div>
+              )}
             </div>
 
             <div>
@@ -146,6 +161,18 @@ export default function NewIRExperimentPage() {
                     </option>
                   ))}
                 </select>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowQueriesUpload(v => !v)}
+                className="mt-1.5 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+              >
+                {showQueriesUpload ? '▲ hide upload' : '↑ or upload new'}
+              </button>
+              {showQueriesUpload && (
+                <div className="mt-3">
+                  <DatasetUploader onUploadComplete={r => { setQueriesDatasetId(r.dataset_id); setDatasets(prev => [...prev, { dataset_id: r.dataset_id, filename: r.filename, rows: r.rows, cols: r.cols, created_at: '', experiment_count: 0 }]); setShowQueriesUpload(false); }} />
+                </div>
               )}
             </div>
 

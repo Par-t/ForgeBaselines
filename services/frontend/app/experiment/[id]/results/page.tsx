@@ -3,17 +3,29 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { api, ExperimentResultsResponse, ProgressStatus } from '@/lib/api'
+import { api, UnifiedResultsResponse, ProgressStatus } from '@/lib/api'
 import { ProtectedRoute } from '@/components/protected-route'
 
 const MODEL_LABELS: Record<string, string> = {
   logistic_regression: 'Logistic Regression',
   random_forest: 'Random Forest',
   gradient_boosting: 'Gradient Boosting',
+  xgboost: 'XGBoost',
+  svm: 'SVM',
+  knn: 'KNN',
 }
 
 function pct(n: number) {
   return (n * 100).toFixed(1) + '%'
+}
+
+function MetricCard({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="bg-gray-800 rounded-xl p-5 text-center">
+      <div className="text-2xl font-bold text-indigo-400">{value.toFixed(4)}</div>
+      <div className="text-xs text-gray-400 mt-1 font-medium">{label}</div>
+    </div>
+  )
 }
 
 function ResultsPageContent() {
@@ -21,7 +33,7 @@ function ResultsPageContent() {
   const experimentId = params.id as string
 
   const [progress, setProgress] = useState<ProgressStatus | null>(null)
-  const [results, setResults] = useState<ExperimentResultsResponse | null>(null)
+  const [results, setResults] = useState<UnifiedResultsResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [downloading, setDownloading] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -50,7 +62,7 @@ function ResultsPageContent() {
         setProgress(status)
         if (status.status === 'completed') {
           stopPolling()
-          const data = await api.getResults(experimentId)
+          const data = await api.getUnifiedResults(experimentId)
           setResults(data)
         } else if (status.status === 'failed') {
           stopPolling()
@@ -73,15 +85,15 @@ function ResultsPageContent() {
         <div className="bg-red-950/50 border border-red-900 text-red-400 rounded-xl p-6 mb-5 text-sm">
           {error}
         </div>
-        <Link href="/upload" className="text-indigo-400 hover:text-white transition-colors text-sm">
-          ← Upload a new dataset
+        <Link href="/dashboard" className="text-indigo-400 hover:text-white transition-colors text-sm">
+          ← Dashboard
         </Link>
       </div>
     )
   }
 
   if (!results) {
-    const pct = progress?.pct ?? 0
+    const p = progress?.pct ?? 0
     const message = progress?.message ?? 'Starting experiment...'
     return (
       <div className="max-w-2xl mx-auto flex flex-col items-center gap-6 py-20">
@@ -89,12 +101,12 @@ function ResultsPageContent() {
         <div className="w-full max-w-sm">
           <div className="flex justify-between text-xs text-gray-400 mb-2">
             <span>{message}</span>
-            <span className="font-mono">{pct}%</span>
+            <span className="font-mono">{p}%</span>
           </div>
           <div className="w-full bg-gray-800 rounded-full h-1.5">
             <div
               className="bg-indigo-500 h-1.5 rounded-full transition-all duration-500"
-              style={{ width: `${pct}%` }}
+              style={{ width: `${p}%` }}
             />
           </div>
         </div>
@@ -103,11 +115,49 @@ function ResultsPageContent() {
     )
   }
 
+  // ── IR results ──────────────────────────────────────────────────────────────
+  if (results.task_type === 'ir') {
+    return (
+      <div className="max-w-3xl mx-auto">
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold">IR Results</h1>
+          <p className="text-sm text-gray-400 mt-1">
+            BM25 · {results.n_docs.toLocaleString()} docs · {results.n_queries.toLocaleString()} queries
+          </p>
+          <p className="text-xs text-gray-600 font-mono mt-1">{experimentId}</p>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-8">
+          <MetricCard label="MAP" value={results.metrics.map} />
+          <MetricCard label="nDCG@10" value={results.metrics.ndcg_10} />
+          <MetricCard label="Recall@10" value={results.metrics.recall_10} />
+          <MetricCard label="Recall@100" value={results.metrics.recall_100} />
+          <MetricCard label="MRR" value={results.metrics.mrr} />
+        </div>
+
+        <div className="flex gap-3">
+          <Link
+            href="/dashboard"
+            className="flex-1 text-center bg-gray-800 hover:bg-gray-700 text-gray-300 py-2.5 rounded-lg text-sm font-medium transition-colors"
+          >
+            Dashboard
+          </Link>
+          <Link
+            href="/experiment/new-ir"
+            className="flex-1 text-center bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
+          >
+            Run Another
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Classification results ───────────────────────────────────────────────────
   const labelClasses = Object.values(results.label_mapping)
 
   return (
     <div className="max-w-3xl mx-auto">
-      {/* Header */}
       <div className="flex items-start justify-between mb-7">
         <div>
           <h1 className="text-2xl font-bold mb-1">Results</h1>
@@ -121,7 +171,6 @@ function ResultsPageContent() {
         )}
       </div>
 
-      {/* Leaderboard table */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden mb-6">
         <table className="w-full text-sm">
           <thead>
@@ -138,30 +187,16 @@ function ResultsPageContent() {
             {results.leaderboard.map((model, idx) => (
               <tr
                 key={model.model_name}
-                className={`border-b border-gray-800 last:border-0 ${
-                  idx === 0 ? 'bg-indigo-950/25' : ''
-                }`}
+                className={`border-b border-gray-800 last:border-0 ${idx === 0 ? 'bg-indigo-950/25' : ''}`}
               >
                 <td className="px-5 py-3.5 font-medium text-white">
-                  {idx === 0 && (
-                    <span className="text-amber-400 mr-2 text-xs">★</span>
-                  )}
+                  {idx === 0 && <span className="text-amber-400 mr-2 text-xs">★</span>}
                   {MODEL_LABELS[model.model_name] ?? model.model_name}
                 </td>
-                <td className="px-4 py-3.5 text-right font-mono text-gray-300">
-                  {pct(model.accuracy)}
-                </td>
-                <td className="px-4 py-3.5 text-right font-mono text-gray-300">
-                  {pct(model.precision)}
-                </td>
-                <td className="px-4 py-3.5 text-right font-mono text-gray-300">
-                  {pct(model.recall)}
-                </td>
-                <td
-                  className={`px-4 py-3.5 text-right font-mono font-semibold ${
-                    idx === 0 ? 'text-indigo-400' : 'text-gray-300'
-                  }`}
-                >
+                <td className="px-4 py-3.5 text-right font-mono text-gray-300">{pct(model.accuracy)}</td>
+                <td className="px-4 py-3.5 text-right font-mono text-gray-300">{pct(model.precision)}</td>
+                <td className="px-4 py-3.5 text-right font-mono text-gray-300">{pct(model.recall)}</td>
+                <td className={`px-4 py-3.5 text-right font-mono font-semibold ${idx === 0 ? 'text-indigo-400' : 'text-gray-300'}`}>
                   {pct(model.f1)}
                 </td>
                 <td className="px-5 py-3.5 text-right font-mono text-xs text-gray-600">
@@ -173,7 +208,6 @@ function ResultsPageContent() {
         </table>
       </div>
 
-      {/* Best model callout */}
       {results.leaderboard[0] && (
         <div className="bg-gray-900 border border-indigo-900/50 rounded-xl px-5 py-4 mb-6 flex items-center justify-between">
           <div>
@@ -191,7 +225,6 @@ function ResultsPageContent() {
         </div>
       )}
 
-      {/* Actions */}
       <div className="flex gap-3">
         <Link
           href="/dashboard"

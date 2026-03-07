@@ -1,4 +1,4 @@
-"""Preprocessing pipeline."""
+"""Classification preprocessing pipeline."""
 
 import pandas as pd
 import numpy as np
@@ -9,7 +9,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from typing import Tuple, Any, List, Optional
 
-from app.schemas.plan import ColumnConfig, PreprocessingConfig
+from app.schemas.classification import ColumnConfig, PreprocessingConfig
 from app.preprocessing.text import preprocess_text_column, is_text_column
 
 

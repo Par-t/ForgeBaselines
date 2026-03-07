@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { api, DatasetListItem, ExperimentListItem, IRExperimentListItem } from '@/lib/api';
+import { api, DatasetListItem, UnifiedExperimentListItem } from '@/lib/api';
 import { ProtectedRoute } from '@/components/protected-route';
 
 function formatDate(iso: string): string {
@@ -46,10 +45,8 @@ function ConfirmModal({
 }
 
 function DashboardContent() {
-  const router = useRouter();
   const [datasets, setDatasets] = useState<DatasetListItem[]>([]);
-  const [experiments, setExperiments] = useState<ExperimentListItem[]>([]);
-  const [irExperiments, setIRExperiments] = useState<IRExperimentListItem[]>([]);
+  const [experiments, setExperiments] = useState<UnifiedExperimentListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ type: 'dataset' | 'experiment'; id: string } | null>(null);
@@ -57,14 +54,12 @@ function DashboardContent() {
 
   const load = useCallback(async () => {
     try {
-      const [ds, exps, irExps] = await Promise.all([
+      const [ds, exps] = await Promise.all([
         api.listDatasets(),
-        api.listExperiments(),
-        api.listIRExperiments(),
+        api.listAllExperiments(),
       ]);
       setDatasets(ds.datasets);
       setExperiments(exps.experiments);
-      setIRExperiments(irExps.experiments);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load dashboard');
     } finally {
@@ -92,7 +87,6 @@ function DashboardContent() {
     }
   };
 
-  // Build dataset_id → filename map for the experiments table
   const datasetNames: Record<string, string> = {};
   for (const d of datasets) datasetNames[d.dataset_id] = d.filename;
 
@@ -122,22 +116,23 @@ function DashboardContent() {
         />
       )}
 
+      {/* Datasets */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Datasets</h2>
           <Link
-            href="/upload"
+            href="/select"
             className="text-sm px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors"
           >
-            + Upload
+            + New
           </Link>
         </div>
 
         {datasets.length === 0 ? (
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center text-gray-500 text-sm">
             No datasets yet.{' '}
-            <Link href="/upload" className="text-indigo-400 hover:text-white transition-colors">
-              Upload your first dataset →
+            <Link href="/select" className="text-indigo-400 hover:text-white transition-colors">
+              Start a new experiment →
             </Link>
           </div>
         ) : (
@@ -185,83 +180,23 @@ function DashboardContent() {
         )}
       </div>
 
+      {/* Experiments */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Classification Experiments</h2>
+          <h2 className="text-lg font-semibold">Experiments</h2>
+          <Link
+            href="/select"
+            className="text-sm px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors"
+          >
+            + New
+          </Link>
         </div>
 
         {experiments.length === 0 ? (
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center text-gray-500 text-sm">
-            No experiments yet. Upload a dataset and run one.
-          </div>
-        ) : (
-          <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-800">
-                  <th className="text-left px-5 py-3 text-gray-500 font-medium">Experiment</th>
-                  <th className="text-left px-4 py-3 text-gray-500 font-medium">Dataset</th>
-                  <th className="text-right px-4 py-3 text-gray-500 font-medium">Date</th>
-                  <th className="px-4 py-3" />
-                </tr>
-              </thead>
-              <tbody>
-                {experiments.map((e) => (
-                  <tr key={e.experiment_id} className="border-b border-gray-800 last:border-0 hover:bg-gray-800/40 transition-colors">
-                    <td className="px-5 py-3 font-mono text-xs text-indigo-400">
-                      <Link
-                        href={`/experiment/${e.experiment_id}/results`}
-                        className="hover:text-indigo-300 transition-colors"
-                      >
-                        {e.experiment_id.slice(0, 8)}…
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-gray-300">
-                      {datasetNames[e.dataset_id] ? (
-                        <Link
-                          href={`/experiment/new?dataset_id=${e.dataset_id}`}
-                          className="hover:text-indigo-400 transition-colors"
-                        >
-                          {datasetNames[e.dataset_id]}
-                        </Link>
-                      ) : (
-                        <span className="text-gray-600 font-mono text-xs">{e.dataset_id.slice(0, 8)}…</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right text-gray-500">{formatDate(e.created_at)}</td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => setConfirm({ type: 'experiment', id: e.experiment_id })}
-                        disabled={deleting === e.experiment_id}
-                        className="text-xs text-red-600 hover:text-red-400 transition-colors disabled:opacity-40"
-                      >
-                        {deleting === e.experiment_id ? '…' : 'Delete'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">IR Experiments</h2>
-          <Link
-            href="/experiment/new-ir"
-            className="text-sm px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors"
-          >
-            + New IR Experiment
-          </Link>
-        </div>
-
-        {irExperiments.length === 0 ? (
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center text-gray-500 text-sm">
-            No IR experiments yet.{' '}
-            <Link href="/experiment/new-ir" className="text-indigo-400 hover:text-white transition-colors">
-              Run your first BM25 experiment →
+            No experiments yet.{' '}
+            <Link href="/select" className="text-indigo-400 hover:text-white transition-colors">
+              Run your first experiment →
             </Link>
           </div>
         ) : (
@@ -270,31 +205,55 @@ function DashboardContent() {
               <thead>
                 <tr className="border-b border-gray-800">
                   <th className="text-left px-5 py-3 text-gray-500 font-medium">Experiment</th>
-                  <th className="text-left px-4 py-3 text-gray-500 font-medium">Corpus</th>
-                  <th className="text-left px-4 py-3 text-gray-500 font-medium">Queries</th>
+                  <th className="text-left px-4 py-3 text-gray-500 font-medium">Type</th>
+                  <th className="text-left px-4 py-3 text-gray-500 font-medium">Dataset</th>
                   <th className="text-right px-4 py-3 text-gray-500 font-medium">Date</th>
+                  <th className="px-4 py-3" />
                 </tr>
               </thead>
               <tbody>
-                {irExperiments.map((e) => (
-                  <tr key={e.experiment_id} className="border-b border-gray-800 last:border-0 hover:bg-gray-800/40 transition-colors">
-                    <td className="px-5 py-3 font-mono text-xs text-indigo-400">
-                      <Link
-                        href={`/experiment/ir/${e.experiment_id}/results`}
-                        className="hover:text-indigo-300 transition-colors"
-                      >
-                        {e.experiment_id.slice(0, 8)}…
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-gray-500 font-mono text-xs">
-                      {datasetNames[e.corpus_dataset_id] ?? e.corpus_dataset_id.slice(0, 8) + '…'}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500 font-mono text-xs">
-                      {datasetNames[e.queries_dataset_id] ?? e.queries_dataset_id.slice(0, 8) + '…'}
-                    </td>
-                    <td className="px-4 py-3 text-right text-gray-500">{formatDate(e.created_at)}</td>
-                  </tr>
-                ))}
+                {experiments.map((e) => {
+                  const datasetLabel = e.task_type === 'classification'
+                    ? (datasetNames[e.dataset_id ?? ''] ?? e.dataset_id?.slice(0, 8) + '…')
+                    : (datasetNames[e.corpus_dataset_id ?? ''] ?? e.corpus_dataset_id?.slice(0, 8) + '…');
+
+                  return (
+                    <tr key={e.experiment_id} className="border-b border-gray-800 last:border-0 hover:bg-gray-800/40 transition-colors">
+                      <td className="px-5 py-3 font-mono text-xs text-indigo-400">
+                        <Link
+                          href={`/experiment/${e.experiment_id}/results`}
+                          className="hover:text-indigo-300 transition-colors"
+                        >
+                          {e.experiment_id.slice(0, 8)}…
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                          e.task_type === 'ir'
+                            ? 'bg-emerald-950 text-emerald-400 border border-emerald-900'
+                            : 'bg-indigo-950 text-indigo-400 border border-indigo-900'
+                        }`}>
+                          {e.task_type === 'ir' ? 'IR' : 'Classification'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-400 text-xs font-mono">
+                        {datasetLabel ?? '—'}
+                      </td>
+                      <td className="px-4 py-3 text-right text-gray-500">{formatDate(e.created_at)}</td>
+                      <td className="px-4 py-3 text-right">
+                        {e.task_type === 'classification' && (
+                          <button
+                            onClick={() => setConfirm({ type: 'experiment', id: e.experiment_id })}
+                            disabled={deleting === e.experiment_id}
+                            className="text-xs text-red-600 hover:text-red-400 transition-colors disabled:opacity-40"
+                          >
+                            {deleting === e.experiment_id ? '…' : 'Delete'}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

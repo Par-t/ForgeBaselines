@@ -2,8 +2,9 @@
 
 import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { api, SuggestColumnsResponse, PreprocessingConfig, TextPreprocessingConfig } from '@/lib/api'
+import { api, SuggestColumnsResponse, PreprocessingConfig, TextPreprocessingConfig, DatasetListItem, DatasetUploadResponse } from '@/lib/api'
 import { ProtectedRoute } from '@/components/protected-route'
+import { DatasetUploader } from '@/components/dataset-uploader'
 
 const MODELS = [
   { id: 'logistic_regression', label: 'Logistic Regression' },
@@ -25,7 +26,22 @@ function Spinner({ size = 5 }: { size?: number }) {
 function NewExperimentForm() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const datasetId = searchParams.get('dataset_id')
+
+  // pickedDatasetId overrides the query param (set by inline picker)
+  const [pickedDatasetId, setPickedDatasetId] = useState('')
+  const datasetId = pickedDatasetId || searchParams.get('dataset_id') || ''
+
+  // For the dataset picker (shown when no dataset_id param)
+  const [availableDatasets, setAvailableDatasets] = useState<DatasetListItem[]>([])
+  const [datasetsLoading, setDatasetsLoading] = useState(false)
+
+  useEffect(() => {
+    if (searchParams.get('dataset_id')) return
+    setDatasetsLoading(true)
+    api.listDatasets()
+      .then(r => setAvailableDatasets(r.datasets))
+      .finally(() => setDatasetsLoading(false))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [columns, setColumns] = useState<string[]>([])
   const [targetColumn, setTargetColumn] = useState('')
@@ -124,13 +140,40 @@ function NewExperimentForm() {
 
   if (!datasetId) {
     return (
-      <p className="text-gray-400">
-        No dataset selected.{' '}
-        <a href="/upload" className="text-indigo-400 underline">
-          Upload one first
-        </a>
-        .
-      </p>
+      <div className="max-w-lg mx-auto">
+        <h1 className="text-2xl font-bold mb-1">New Experiment</h1>
+        <p className="text-gray-500 text-sm mb-8">Select a dataset to configure your experiment</p>
+
+        {datasetsLoading ? (
+          <div className="flex items-center gap-3 text-gray-400 mb-6">
+            <Spinner />
+            Loading datasets...
+          </div>
+        ) : availableDatasets.length > 0 ? (
+          <section className="mb-8">
+            <label className="block text-sm font-medium text-gray-300 mb-2">Existing dataset</label>
+            <select
+              defaultValue=""
+              onChange={e => e.target.value && setPickedDatasetId(e.target.value)}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500 text-white"
+            >
+              <option value="">Choose a dataset...</option>
+              {availableDatasets.map(d => (
+                <option key={d.dataset_id} value={d.dataset_id}>
+                  {d.filename} ({d.rows.toLocaleString()} rows)
+                </option>
+              ))}
+            </select>
+          </section>
+        ) : null}
+
+        <div>
+          <p className="text-sm font-medium text-gray-300 mb-3">
+            {availableDatasets.length > 0 ? 'Or upload a new dataset' : 'Upload a dataset'}
+          </p>
+          <DatasetUploader onUploadComplete={(r: DatasetUploadResponse) => setPickedDatasetId(r.dataset_id)} />
+        </div>
+      </div>
     )
   }
 

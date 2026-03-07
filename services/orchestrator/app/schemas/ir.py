@@ -3,7 +3,7 @@
 from typing import List, Optional
 from pydantic import BaseModel, Field
 
-from app.schemas.plan import PreprocessingConfig
+from app.schemas.classification import PreprocessingConfig
 
 
 class IRExperimentRunRequest(BaseModel):
